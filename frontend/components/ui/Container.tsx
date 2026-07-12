@@ -1,0 +1,18 @@
+import { cn } from "@/utils/cn";
+
+interface ContainerProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+/**
+ * Wrapper lebar konsisten untuk seluruh halaman.
+ * Reusable supaya padding horizontal & max-width tidak diulang di tiap halaman.
+ */
+export function Container({ children, className }: ContainerProps) {
+  return (
+    <div className={cn("mx-auto w-full max-w-[1440px] px-6 lg:px-10", className)}>
+      {children}
+    </div>
+  );
+}
