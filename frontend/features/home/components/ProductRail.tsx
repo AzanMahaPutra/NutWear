@@ -17,7 +17,7 @@ export function ProductRail({ title, products }: ProductRailProps) {
   return (
     <Container className="py-10">
       <h2 className="mb-6 text-2xl font-bold text-neutral-900">{title}</h2>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}

@@ -4,7 +4,7 @@ import { AuthGuard } from "@/components/shared/AuthGuard";
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard requireRole="admin">
-      <div className="flex min-h-screen bg-neutral-50">
+      <div className="flex min-h-screen flex-col bg-neutral-50 lg:flex-row">
         <AdminSidebar />
         <div className="flex-1">{children}</div>
       </div>

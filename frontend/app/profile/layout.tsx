@@ -7,7 +7,7 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
   return (
     <MainLayout>
       <AuthGuard>
-        <Container className="flex gap-10 py-8">
+        <Container className="flex flex-col gap-10 py-8 md:flex-row">
           <ProfileSidebar />
           <div className="flex-1">{children}</div>
         </Container>

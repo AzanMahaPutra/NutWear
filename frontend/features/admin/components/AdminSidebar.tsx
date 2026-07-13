@@ -36,12 +36,14 @@ export function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-neutral-100 bg-white lg:block">
-      <div className="border-b border-neutral-100 p-6">
-        <Logo />
-        <p className="mt-1 text-xs text-neutral-400">Admin Panel</p>
+    <aside className="w-full shrink-0 border-b border-neutral-100 bg-white lg:w-64 lg:border-b-0 lg:border-r lg:block">
+      <div className="flex items-center justify-between border-b border-neutral-100 p-4 lg:block lg:p-6">
+        <div>
+          <Logo />
+          <p className="mt-1 text-xs text-neutral-400">Admin Panel</p>
+        </div>
       </div>
-      <nav className="space-y-1 p-4">
+      <nav className="flex w-full flex-row space-x-2 overflow-x-auto p-4 lg:flex-col lg:space-x-0 lg:space-y-1">
         {ADMIN_NAV.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
@@ -50,11 +52,11 @@ export function AdminSidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                "flex items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"
               )}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-4 w-4 shrink-0" />
               {item.label}
             </Link>
           );

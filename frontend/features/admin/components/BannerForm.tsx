@@ -393,15 +393,15 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
       </Section>
 
       <Section title="Tombol CTA">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormInput label="Teks" placeholder="Belanja Sekarang" {...register("ctaText")} error={errors.ctaText?.message} />
           <FormInput label="Link" placeholder="/produk" {...register("ctaLink")} error={errors.ctaLink?.message} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <ColorField label="Warna Background" register={register("ctaBgColor")} />
           <ColorField label="Warna Teks" register={register("ctaTextColor")} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormInput label="Radius" type="number" placeholder="9999" {...register("ctaRadius")} />
           <SelectField label="Ukuran" register={register("ctaSize")} options={SIZES} labels={SIZE_LABEL} />
         </div>

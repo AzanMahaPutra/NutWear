@@ -18,7 +18,7 @@ export function ProfileSidebar() {
   const pathname = usePathname();
 
   return (
-    <nav className="w-48 shrink-0 space-y-3 pt-2 text-sm">
+    <nav className="flex w-full shrink-0 flex-row gap-4 overflow-x-auto pb-4 pt-2 text-sm md:w-48 md:flex-col md:gap-0 md:space-y-3 md:overflow-visible md:pb-0">
       {PROFILE_NAV.map((item) => {
         const isActive = pathname === item.href;
         return (

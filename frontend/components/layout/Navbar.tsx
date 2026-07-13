@@ -202,8 +202,20 @@ export function Navbar() {
         <NavbarCategoryMenu variant="desktop" />
       </Container>
 
-      {/* Update 1 — versi mobile menu Kategori: accordion expand/collapse, hanya tampil di layar kecil. */}
-      <Container className="border-t border-neutral-100 md:hidden">
+      <Container className="flex flex-col gap-3 border-t border-neutral-100 py-3 md:hidden">
+        <form
+          onSubmit={handleSearchSubmit}
+          className="flex items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 focus-within:border-neutral-300 focus-within:bg-white"
+        >
+          <Search className="h-4 w-4 shrink-0 text-neutral-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cari produk..."
+            className="ml-3 w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
+          />
+        </form>
         <NavbarCategoryMenu variant="mobile" />
       </Container>
     </header>
