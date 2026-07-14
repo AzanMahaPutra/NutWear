@@ -5,6 +5,7 @@ import { OrderStatusBadge } from "@/components/shared/OrderStatusBadge";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 import { PAYMENT_STATUS_LABEL, PAYMENT_TYPE_LABEL } from "@/constants/order";
+import { ContinuePaymentButton } from "@/features/order/components/ContinuePaymentButton";
 
 interface OrderDetailViewProps {
   order: Order;
@@ -59,6 +60,12 @@ export function OrderDetailView({ order }: OrderDetailViewProps) {
             <p className="text-base font-bold text-neutral-900">{formatCurrency(order.grandTotal)}</p>
           </div>
         </div>
+
+        {order.status === "menunggu_pembayaran" && (
+          <div className="mt-4">
+            <ContinuePaymentButton orderId={order.id} className="w-full rounded-full bg-neutral-900 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50" />
+          </div>
+        )}
       </div>
 
       <div>

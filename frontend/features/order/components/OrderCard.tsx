@@ -14,6 +14,7 @@ import { getApiErrorMessage } from "@/lib/apiTypes";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { OrderDetailView } from "@/features/order/components/OrderDetailView";
+import { ContinuePaymentButton } from "@/features/order/components/ContinuePaymentButton";
 import { orderService } from "@/services/orderService";
 
 interface OrderCardProps {
@@ -146,6 +147,8 @@ export function OrderCard({ order, onOrderCancelled, autoOpenDetail }: OrderCard
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-3">
+          {canCancel && <ContinuePaymentButton orderId={order.id} />}
+
           {canCancel && (
             <button
               type="button"

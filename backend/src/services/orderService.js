@@ -90,9 +90,12 @@ function toResponse(order) {
  * 2. Validasi stok & harga tiap item terhadap data produk terkini.
  * 3. Validasi alamat pengiriman milik user.
  * 4. Hitung ongkir (shippingService — otoritatif di backend).
- * 5. Buat order + order_items, kurangi stok tiap varian (+ stock_logs).
- * 6. Minta Snap Token ke Midtrans, simpan di tabel payments.
- * (Penghapusan keranjang hanya dilakukan saat webhook Midtrans settlement/capture)
+ * 5. Buat order + order_items (snapshot lengkap tiap item, lihat toResponse di atas).
+ * 6. UPDATE 2 — Hapus item keranjang yang baru saja diproses (cartRepository.deleteByIds),
+ *    TANPA menunggu pembayaran berhasil. Konsepnya: Keranjang -> Checkout -> Pesanan;
+ *    begitu jadi pesanan, item tersebut sudah tidak lagi bagian dari keranjang.
+ * 7. Kurangi stok tiap varian (+ stock_logs).
+ * 8. Minta Snap Token ke Midtrans, simpan di tabel payments.
  */
 async function checkout(userId, { addressId, cartItemIds }) {
   const address = await addressRepository.findById(addressId);
@@ -178,6 +181,15 @@ async function checkout(userId, { addressId, cartItemIds }) {
     }))
   );
 
+  // UPDATE 2 — Hapus HANYA item keranjang yang baru saja diproses checkout (cartItems,
+  // sudah difilter cartItemIds di atas kalau user checkout via checkbox), segera setelah
+  // order + order_items berhasil dibuat. TIDAK menunggu pembayaran berhasil — begitu
+  // sebuah item keranjang berubah jadi pesanan (order_items, snapshot lengkap), item
+  // tersebut sudah bukan lagi bagian dari keranjang, apa pun status pembayarannya nanti
+  // (Menunggu Pembayaran / Sudah Dibayar). Item yang tidak ikut dicentang/diproses tetap
+  // aman di keranjang (lihat cartRepository.deleteByIds — dibatasi ke id yang dikirim).
+  await cartRepository.deleteByIds(userId, cartItems.map((item) => item.id));
+
   // Kurangi stok + catat stock_logs untuk setiap item (sesuai alur sistem poin 7).
   for (const item of validatedItems) {
     await stockRepository.decreaseStock(item.variantId, item.quantity);
@@ -255,6 +267,103 @@ async function checkout(userId, { addressId, cartItemIds }) {
   }
   
   return response;
+}
+
+/**
+ * UPDATE 1 - tombol "Bayar Sekarang" / "Lanjutkan Pembayaran" untuk pesanan yang masih
+ * berstatus Menunggu Pembayaran (mis. popup Midtrans ditutup sebelum pembayaran selesai).
+ * TIDAK PERNAH membuat order baru maupun baris payments baru: kolom payments.order_id
+ * bersifat unique, jadi baris payments milik order yang sama selalu di-UPDATE di tempat
+ * (paymentRepository.updateByOrderId), tidak pernah di-insert ulang.
+ *
+ * Alur:
+ * 1. Pastikan order tersebut milik user & masih berstatus Menunggu Pembayaran.
+ * 2. Cek status transaksi Midtrans yang tersimpan lewat Core API:
+ *    - Masih "pending" di sisi Midtrans -> Snap Token lama dipakai ulang apa adanya,
+ *      tidak membuat transaksi baru sama sekali.
+ *    - Sudah expire/dibatalkan/tidak ditemukan/Core API gagal dihubungi -> dibuatkan
+ *      Snap Transaction baru dengan midtrans_order_id baru (harus unik di sisi Midtrans,
+ *      mencegah error "order_id has already been used"), lalu baris payments yang SAMA
+ *      di-update dengan Snap Token barunya.
+ * 3. Setelah user menyelesaikan pembayaran (di popup lama atau baru), Webhook Midtrans
+ *    (paymentService.handleMidtransNotification) tetap satu-satunya sumber kebenaran
+ *    yang mengubah status order menjadi Sudah Dibayar.
+ */
+async function continuePayment(userId, orderId) {
+  const order = await orderRepository.findById(orderId);
+  if (!order || order.user_id !== userId) {
+    throw new AppError("Pesanan tidak ditemukan", 404);
+  }
+  if (order.status !== "menunggu_pembayaran") {
+    throw new AppError("Pesanan ini sudah tidak dapat dilanjutkan pembayarannya", 400);
+  }
+
+  const existingPayment = await paymentRepository.findByOrderId(order.id);
+  if (!existingPayment) {
+    throw new AppError("Data pembayaran untuk pesanan ini tidak ditemukan", 404);
+  }
+
+  if (existingPayment.midtrans_order_id && existingPayment.snap_token) {
+    const midtransStatus = await midtrans.getTransactionStatus(existingPayment.midtrans_order_id);
+    if (midtransStatus?.transaction_status === "pending") {
+      return { orderId: order.id, snapToken: existingPayment.snap_token };
+    }
+  }
+
+  const address = await addressRepository.findById(order.address_id);
+  const user = await userRepository.findById(order.user_id);
+  if (!address || !user) {
+    throw new AppError("Data alamat atau pengguna untuk pesanan ini tidak lengkap", 400);
+  }
+
+  const midtransOrderId = `NUTWEAR-${order.id.slice(0, 8)}-${uuidv4().slice(0, 6)}`;
+  const finishRedirectUrl = `${env.frontendUrl}/profile/riwayat-pesanan?order=${order.id}`;
+  const midtransAddress = {
+    first_name: address.receiver_name,
+    phone: address.phone,
+    address: [address.address, address.district, address.province].filter(Boolean).join(", "),
+    city: address.city,
+    postal_code: address.postal_code,
+    country_code: "IDN",
+  };
+
+  let snapToken;
+  try {
+    snapToken = await midtrans.createSnapTransaction({
+      midtransOrderId,
+      grossAmount: order.grand_total,
+      customerDetails: {
+        first_name: user.nama_lengkap,
+        email: user.email,
+        phone: user.no_hp,
+        billing_address: midtransAddress,
+        shipping_address: midtransAddress,
+      },
+      finishRedirectUrl,
+      items: [
+        ...(order.order_items || []).map((oi) => ({
+          id: oi.variant_id,
+          price: oi.price,
+          quantity: oi.quantity,
+          name: (oi.product_name ?? oi.product_variants?.products?.nama_produk ?? "Produk").slice(0, 50),
+        })),
+        { id: "shipping", price: order.shipping_cost, quantity: 1, name: "Ongkos Kirim" },
+      ],
+    });
+  } catch (error) {
+    console.error("Midtrans Error (continuePayment):", error);
+    throw new AppError(error.message || "Gagal menghubungi layanan pembayaran Midtrans", 500);
+  }
+
+  await paymentRepository.updateByOrderId(order.id, {
+    midtrans_order_id: midtransOrderId,
+    snap_token: snapToken,
+    transaction_status: "pending",
+    transaction_id: null,
+    fraud_status: null,
+  });
+
+  return { orderId: order.id, snapToken };
 }
 
 async function getOrdersByUser(userId) {
@@ -364,6 +473,7 @@ async function deleteOrdersByFilter({ date, month, year, status }) {
 
 module.exports = {
   checkout,
+  continuePayment,
   getOrdersByUser,
   getAllOrders,
   getOrderById,

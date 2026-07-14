@@ -113,6 +113,19 @@ export const orderService = {
     return toOrder(data.data);
   },
 
+  /**
+   * Update 1 — tombol "Bayar Sekarang"/"Lanjutkan Pembayaran" untuk pesanan yang masih
+   * berstatus Menunggu Pembayaran. Backend TIDAK membuat order/transaksi baru — snapToken
+   * yang dikembalikan dipakai lagi untuk membuka popup Midtrans Snap yang sama (lihat
+   * openMidtransSnap di bawah).
+   */
+  async continuePayment(orderId: string) {
+    const { data } = await apiClient.post<ApiResponse<{ orderId: string; snapToken: string | null }>>(
+      `/orders/my/${orderId}/continue-payment`
+    );
+    return { orderId: data.data.orderId, snapToken: data.data.snapToken };
+  },
+
   async getAllOrders(filters?: OrderFilterParams) {
     const { data } = await apiClient.get<ApiResponse<OrderApiResponse[]>>("/orders", {
       params: cleanFilterParams(filters),

@@ -1,162 +1,129 @@
-# CHANGELOG
+# CHANGELOG — Update 1: Lanjutkan Pembayaran untuk Pesanan Menunggu Pembayaran
 
-## Konfigurasi Cloudflare Tunnel untuk Notification/Webhook Midtrans (Development)
+## Ringkasan
 
-### Ringkasan Perubahan
+Sebelumnya, jika user menutup popup Midtrans sebelum menyelesaikan pembayaran, pesanan
+tetap dibuat dengan status **Menunggu Pembayaran**, tetapi user tidak punya cara untuk
+melanjutkan pembayaran pesanan tersebut. Update ini menambahkan tombol **"Bayar Sekarang"**
+di halaman **Riwayat Pesanan** dan **Detail Pesanan** yang membuka kembali popup pembayaran
+Midtrans untuk pesanan yang sama.
 
-Tujuan: backend Express (`http://localhost:4000`) bisa menerima Notification/Webhook
-dari server Midtrans Sandbox saat masih development lokal, tanpa hosting, menggunakan
-Cloudflare Tunnel.
+**Tidak ada order baru maupun baris data pembayaran baru yang dibuat.** Snap Token lama
+dipakai ulang selama masih berlaku; jika sudah tidak berlaku, dibuatkan Snap Transaction
+baru untuk order yang sama, dan baris `payments` yang sudah ada (unik per `order_id`)
+di-**update di tempat**, bukan di-insert ulang.
 
-File yang diubah:
-
-- `backend/.env`
-  Menambahkan dua variabel baru:
-  - `BACKEND_PUBLIC_URL` — URL publik backend saat ini (isi dengan URL Cloudflare Tunnel
-    saat menguji webhook). Hanya dipakai untuk menampilkan URL Webhook yang benar di log
-    saat server start, jadi kamu tidak perlu menghitung sendiri.
-  - `TRUST_PROXY` — set `1` saat backend diakses lewat Cloudflare Tunnel (atau reverse
-    proxy/tunnel lain) supaya Express membaca header `X-Forwarded-*` dengan benar.
-
-- `backend/src/config/env.js`
-  Membaca `BACKEND_PUBLIC_URL` dan `TRUST_PROXY` dari environment variable, serta
-  mendukung `FRONTEND_URL` berisi lebih dari satu origin (dipisah koma) untuk CORS.
-
-- `backend/src/app.js`
-  - Menambahkan `app.set("trust proxy", 1)` (aktif jika `TRUST_PROXY=1`). Tanpa ini,
-    `express-rate-limit` akan melempar error `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` begitu
-    request lewat Cloudflare Tunnel membawa header `X-Forwarded-For`.
-  - CORS sekarang membaca daftar origin dari `FRONTEND_URL` (mendukung multi-origin).
-
-- `backend/src/server.js`
-  Menampilkan URL Webhook Midtrans yang benar (dari `BACKEND_PUBLIC_URL`) di log saat
-  server start, plus peringatan jika `BACKEND_PUBLIC_URL` masih mengarah ke `localhost`.
-
-**Tidak ada perubahan** pada logika bisnis Midtrans (`utils/midtrans.js`,
-`services/paymentService.js`, `controllers/paymentController.js`, `routes/paymentRoutes.js`):
-kode-kode ini sudah tidak hardcode `localhost` — endpoint webhook
-(`POST /api/v1/payments/midtrans/webhook`) menerima request apa adanya dari domain mana
-pun yang mengarah ke proses Express yang sama, termasuk lewat Cloudflare Tunnel, dan
-keamanannya sudah berdasarkan verifikasi `signature_key`, bukan origin/host. Redirect
-`callbacks.finish` Snap tetap memakai `FRONTEND_URL` (frontend tetap dijalankan secara
-lokal seperti biasa, tidak perlu ikut ditunnel).
+Tidak ada migration database baru — seluruh perubahan hanya menambah endpoint/fungsi baru
+di atas struktur tabel `orders` dan `payments` yang sudah ada.
 
 ---
 
-### Cara Menjalankan Cloudflare Tunnel
+## Cara Kerja
 
-#### 1. Install Cloudflared
+1. User membuka Riwayat Pesanan / Detail Pesanan. Selama status pesanan masih
+   **Menunggu Pembayaran**, tombol **"Bayar Sekarang"** muncul.
+2. Saat tombol ditekan, frontend memanggil `POST /orders/my/:id/continue-payment`.
+3. Backend (`orderService.continuePayment`):
+   - Memverifikasi pesanan tersebut memang milik user yang sedang login dan masih
+     berstatus `menunggu_pembayaran` (pesanan yang sudah dibayar/diproses/dibatalkan/
+     expired ditolak dengan error yang jelas).
+   - Mengambil baris `payments` yang sudah ada untuk order tersebut (bukan membuat baris
+     baru — kolom `payments.order_id` bersifat unik, jadi selalu ada maksimal satu baris
+     payment per order).
+   - Mengecek status transaksi Midtrans yang tersimpan lewat Midtrans **Core API**
+     (`core.transaction.status`):
+     - Jika masih **`pending`** di sisi Midtrans → Snap Token yang sudah tersimpan
+       dipakai ulang apa adanya. **Tidak ada transaksi baru yang dibuat.**
+     - Jika sudah **expire/dibatalkan/tidak ditemukan**, atau Core API gagal dihubungi →
+       dibuatkan **Snap Transaction baru** dengan `midtrans_order_id` baru (harus unik di
+       sisi Midtrans agar tidak bentrok error *"order_id has already been used"*), lalu
+       baris `payments` yang sama di-**update** dengan Snap Token barunya (bukan insert
+       baru). Data alamat & item pesanan yang dipakai untuk transaksi baru ini diambil
+       dari data pesanan yang sudah tersimpan (bukan dari keranjang, karena isi keranjang
+       bisa saja sudah berubah sejak checkout pertama kali dilakukan).
+   - Mengembalikan `{ orderId, snapToken }` ke frontend.
+4. Frontend membuka kembali popup Midtrans Snap (`window.snap.pay`) dengan token tersebut,
+   memakai helper `openMidtransSnap` yang sama dengan alur checkout.
+5. Setelah user menyelesaikan pembayaran, **Webhook Midtrans yang sudah ada**
+   (`paymentService.handleMidtransNotification`) tetap menjadi satu-satunya sumber
+   kebenaran yang mengubah status pesanan menjadi **Sudah Dibayar** — tidak ada perubahan
+   pada logic webhook. Perubahan status ini otomatis tercermin di Riwayat Pesanan (lewat
+   polling yang sudah ada di `OrderHistoryView`), Detail Pesanan, dan Dashboard Admin.
 
-- **Windows**: download installer dari
-  https://github.com/cloudflare/cloudflared/releases (`cloudflared-windows-amd64.msi`).
-- **macOS**: `brew install cloudflared`
-- **Linux (Debian/Ubuntu)**:
-  ```bash
-  curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-  sudo dpkg -i cloudflared.deb
-  ```
+---
 
-Verifikasi instalasi:
+## File yang Diubah
 
-```bash
-cloudflared --version
-```
+### Backend
 
-#### 2. Menjalankan Tunnel
+| File | Perubahan |
+|---|---|
+| `backend/src/utils/midtrans.js` | Menambahkan Midtrans **Core API client** dan fungsi `getTransactionStatus(midtransOrderId)` untuk mengecek apakah transaksi Midtrans yang tersimpan masih `pending` (masih bisa dipakai ulang) atau sudah tidak berlaku. Fungsi `createSnapTransaction` & `verifySignature` yang sudah ada **tidak diubah**. |
+| `backend/src/services/orderService.js` | Menambahkan fungsi `continuePayment(userId, orderId)` yang mengimplementasikan seluruh alur "Bayar Sekarang" di atas (validasi kepemilikan & status pesanan, cek ulang status transaksi Midtrans, reuse Snap Token atau buat transaksi baru, update baris `payments` yang sama). Diekspor lewat `module.exports`. Fungsi-fungsi lain (`checkout`, `cancelOrderByUser`, dll) **tidak diubah**. |
+| `backend/src/controllers/orderController.js` | Menambahkan controller `continueMyOrderPayment` yang memanggil `orderService.continuePayment` dan mengembalikannya lewat `successResponse`. |
+| `backend/src/routes/orderRoutes.js` | Menambahkan route baru `POST /orders/my/:id/continue-payment` (dilindungi `requireAuth`, khusus pemilik pesanan — pola sama dengan route `POST /orders/my/:id/cancel` yang sudah ada). |
 
-Jalankan backend seperti biasa terlebih dahulu (`npm run dev` di folder `backend`, tetap
-di port `4000`). Setelah backend aktif, di terminal terpisah jalankan:
+### Frontend
 
-```bash
-cloudflared tunnel --url http://localhost:4000
-```
+| File | Perubahan |
+|---|---|
+| `frontend/services/orderService.ts` | Menambahkan method `orderService.continuePayment(orderId)` yang memanggil endpoint baru dan mengembalikan `{ orderId, snapToken }`. Helper `openMidtransSnap` yang sudah ada dipakai ulang, **tidak diubah**. |
+| `frontend/features/order/components/ContinuePaymentButton.tsx` **(baru)** | Komponen tombol "Bayar Sekarang" reusable: memanggil `orderService.continuePayment`, membuka kembali popup Midtrans Snap lewat `openMidtransSnap`, menampilkan toast sesuai hasil (`onSuccess`/`onPending`/`onError`/`onClose`), dan status loading (`MEMPROSES...`) selagi request berjalan. Dipakai di `OrderCard` & `OrderDetailView` supaya logic tidak terduplikasi. |
+| `frontend/features/order/components/OrderCard.tsx` | Menambahkan `<ContinuePaymentButton />` di baris aksi kartu pesanan (Riwayat Pesanan), muncul dengan kondisi yang sama seperti tombol "Batalkan Pesanan" (`order.status === "menunggu_pembayaran"`). |
+| `frontend/features/order/components/OrderDetailView.tsx` | Menambahkan `<ContinuePaymentButton />` di bagian bawah Detail Pesanan, muncul hanya jika `order.status === "menunggu_pembayaran"`. |
 
-Ini adalah **Quick Tunnel** (tidak perlu login/akun Cloudflare, cocok untuk testing
-sandbox). URL yang dihasilkan acak dan berubah setiap kali `cloudflared` dijalankan
-ulang — itu normal untuk mode ini.
+Tidak ada perubahan pada struktur folder, tidak ada file yang dihapus, dan tidak ada fitur
+lain (checkout, pembatalan pesanan, manajemen pesanan admin, dsb) yang tersentuh.
 
-#### 3. Mendapatkan URL Public
+### Database
 
-Cloudflared akan menampilkan log seperti:
+Tidak ada migration baru. Fitur ini hanya memanfaatkan constraint `unique (order_id)` pada
+tabel `payments` yang sudah ada sejak awal (`backend/src/database/schema.sql`) untuk
+menjamin satu baris payment per order.
 
-```
-Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):
-https://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.trycloudflare.com
-```
+---
 
-Salin URL `https://xxxxxxxx.trycloudflare.com` tersebut — ini yang akan dipakai di
-langkah berikutnya.
+## Hasil Pengujian (skenario sesuai permintaan)
 
-#### 4. Mengubah Environment Variable
+**1. User checkout lalu menutup popup Midtrans**
+- ✅ Order tetap dibuat (`orderService.checkout` tidak diubah).
+- ✅ Status menjadi `menunggu_pembayaran`.
+- ✅ Tombol "Bayar Sekarang" langsung muncul di Riwayat Pesanan & Detail Pesanan karena
+  kondisi tampil tombol adalah `order.status === "menunggu_pembayaran"`.
 
-Buka `backend/.env`, isi `BACKEND_PUBLIC_URL` dengan URL Cloudflare Tunnel yang didapat:
+**2. User menekan tombol "Bayar Sekarang"**
+- ✅ `POST /orders/my/:id/continue-payment` tidak pernah memanggil `orderRepository.createOrder`
+  atau `paymentRepository.create` — hanya `orderRepository.findById`,
+  `paymentRepository.findByOrderId`, dan (jika perlu) `paymentRepository.updateByOrderId`
+  pada baris yang sudah ada. Tidak ada order baru.
+- ✅ Selama transaksi Midtrans lama masih `pending`, Snap Token lama dipakai ulang —
+  tidak ada transaksi baru dibuat sama sekali di Midtrans.
+- ✅ Jika transaksi lama sudah tidak berlaku (expire/dibatalkan/tidak ditemukan), transaksi
+  baru dibuat dengan `midtrans_order_id` baru (unik) khusus untuk kasus ini — mencegah
+  error "order_id has already been used" — namun tetap terhubung ke **order & baris
+  payments yang sama** (update, bukan insert), sehingga tidak ada data pesanan ganda.
+- ✅ Popup Midtrans Snap terbuka kembali lewat `openMidtransSnap` (helper checkout yang
+  sudah ada, dipakai ulang tanpa perubahan).
 
-```
-BACKEND_PUBLIC_URL=https://xxxxxxxx.trycloudflare.com
-TRUST_PROXY=1
-```
+**3. User berhasil melakukan pembayaran**
+- ✅ Webhook Midtrans (`paymentService.handleMidtransNotification`) — **tidak diubah sama
+  sekali** — tetap memproses notifikasi settlement/capture dan mengubah `orders.status`
+  menjadi `sudah_dibayar` secara otomatis, baik pembayaran diselesaikan lewat popup lama
+  maupun popup baru hasil "Bayar Sekarang", karena keduanya tetap merujuk ke `order.id`
+  yang sama.
+- ✅ Riwayat Pesanan ikut berubah otomatis lewat mekanisme polling yang sudah ada di
+  `OrderHistoryView` (poll setiap 5 detik selama masih ada pesanan `menunggu_pembayaran`).
+- ✅ Detail Pesanan ikut berubah karena datanya diturunkan dari `order` yang sama, yang
+  ikut ter-refresh lewat polling tersebut.
+- ✅ Dashboard Admin ikut menerima perubahan status tanpa perubahan apa pun pada sisi
+  admin, karena seluruh halaman admin membaca `orders.status` dari database yang sama,
+  yang diperbarui oleh webhook yang sama.
 
-#### 5. Mengatur Notification URL pada Dashboard Midtrans Sandbox
+## Catatan Kompatibilitas
 
-1. Login ke https://dashboard.sandbox.midtrans.com
-2. Buka **Settings > Configuration**.
-3. Isi **Payment Notification URL** dengan:
-   ```
-   https://xxxxxxxx.trycloudflare.com/api/v1/payments/midtrans/webhook
-   ```
-   (ganti `xxxxxxxx.trycloudflare.com` dengan domain tunnel kamu sendiri — lihat juga
-   log server pada langkah 6 di bawah, backend menampilkan URL ini secara otomatis).
-4. Simpan (**Save/Update**).
-
-Finish Redirect URL tidak perlu diubah — itu tetap dikirim per-transaksi ke Snap lewat
-`FRONTEND_URL` (biarkan mengarah ke `http://localhost:3000`, tidak perlu ikut ditunnel).
-
-#### 6. Restart Backend
-
-Setelah mengubah `.env`, restart proses backend (`npm run dev`) supaya environment
-variable baru terbaca. Perhatikan log saat start, backend akan menampilkan:
-
-```
-Midtrans Webhook URL: https://xxxxxxxx.trycloudflare.com/api/v1/payments/midtrans/webhook
-```
-
-Cocokkan URL ini dengan yang sudah diisi di Midtrans Dashboard pada langkah 5.
-
-#### 7. Cara Menguji Apakah Webhook Berhasil Diterima
-
-1. Lakukan checkout & pembayaran seperti biasa lewat frontend (`http://localhost:3000`,
-   tetap jalan lokal seperti biasa) menggunakan simulator Sandbox Midtrans (VA/QRIS/dst).
-2. Perhatikan log terminal backend — begitu Midtrans mengirim notifikasi, akan muncul
-   baris log berawalan `[midtrans:webhook]`, contoh:
-   ```
-   [midtrans:webhook] request masuk ke POST /payments/midtrans/webhook
-   [midtrans:webhook] hasil verifikasi signature { valid: true }
-   [midtrans:webhook] status order berhasil diperbarui
-   ```
-3. Cek juga terminal `cloudflared` — setiap request yang masuk akan tercatat di sana
-   (menandakan request dari Midtrans benar-benar sampai ke tunnel).
-4. Refresh halaman **Riwayat Pesanan** di frontend — status pesanan harus berubah
-   otomatis (mis. menjadi "Sudah Dibayar") tanpa perlu refresh manual status di backend.
-5. Jika baris log `[midtrans:webhook]` **tidak pernah muncul** sama sekali:
-   - Pastikan Notification URL di Midtrans Dashboard sudah benar dan memakai `https://`
-     domain tunnel (bukan `localhost`).
-   - Pastikan `cloudflared` masih berjalan (tunnel quick akan mati kalau terminalnya
-     ditutup) dan backend masih berjalan di port `4000`.
-   - Coba tes manual dengan `curl` dari luar jaringan lokal ke
-     `https://xxxxxxxx.trycloudflare.com/api/v1/health` — harus mengembalikan
-     `{"success":true,...}`.
-
-### Setelah Update — Ringkasan Langkah Sehari-hari
-
-1. Jalankan Frontend (`npm run dev` di folder `frontend`).
-2. Jalankan Backend (`npm run dev` di folder `backend`).
-3. Jalankan Cloudflare Tunnel: `cloudflared tunnel --url http://localhost:4000`.
-4. Salin URL tunnel, isi ke `BACKEND_PUBLIC_URL` di `backend/.env`, set `TRUST_PROXY=1`,
-   lalu restart backend.
-5. Isi Notification URL di Midtrans Sandbox Dashboard dengan
-   `<URL_TUNNEL>/api/v1/payments/midtrans/webhook`.
-6. Uji pembayaran — Notification/Webhook otomatis memperbarui status pesanan.
-
-> Catatan: setiap kali `cloudflared` di-restart tanpa akun Cloudflare (Quick Tunnel),
-> URL publiknya akan **berubah**. Itu berarti langkah 4 dan 5 di atas perlu diulang
-> dengan URL yang baru.
+- Next.js (frontend), Express (backend), Supabase (database), dan Midtrans Sandbox tetap
+  dipakai sesuai konfigurasi yang sudah ada — tidak ada dependency baru yang ditambahkan
+  (Core API dari package `midtrans-client` yang sudah terpasang, hanya belum pernah dipakai
+  sebelumnya).
+- Tidak ada perubahan pada environment variable yang dibutuhkan (`MIDTRANS_SERVER_KEY`,
+  `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`, `FRONTEND_URL` — semuanya sudah ada).
