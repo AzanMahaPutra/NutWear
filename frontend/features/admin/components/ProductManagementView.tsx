@@ -192,6 +192,7 @@ export function ProductManagementView() {
         size="2xl"
       >
         <ProductForm
+          key={editingProduct?.id ?? "new-product"}
           initialData={editingProduct}
           onSuccess={() => {
             setFormOpen(false);

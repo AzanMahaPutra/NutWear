@@ -36,9 +36,17 @@ function toResponse(order) {
         (a, b) => a.sort_order - b.sort_order
       )[0]?.image_url;
 
+      // UPDATE 7 — Sistem Ulasan Produk berbasis Pesanan: sertakan productId
+      // (snapshot, independen dari variant_id yang bisa NULL) & ulasan yang
+      // sudah pernah dibuat user untuk produk ini pada pesanan ini (kalau ada),
+      // supaya Riwayat Pesanan/Detail Pesanan tahu harus menampilkan tombol
+      // "Beri Ulasan" atau "Edit Ulasan" tanpa perlu request tambahan.
+      const review = (order.reviews || []).find((r) => r.product_id === oi.product_id) ?? null;
+
       return {
         id: oi.id,
         variantId: oi.variant_id,
+        productId: oi.product_id ?? null,
         quantity: oi.quantity,
         price: oi.price,
         ukuran: oi.variant_ukuran ?? oi.product_variants?.ukuran,
@@ -47,6 +55,7 @@ function toResponse(order) {
         namaProduk: oi.product_name ?? oi.product_variants?.products?.nama_produk,
         slug: oi.product_slug ?? oi.product_variants?.products?.slug,
         imageUrl: oi.image_url ?? variantThumbnail ?? null,
+        review: review ? { id: review.id, rating: review.rating, comment: review.comment } : null,
       };
     }),
     shippingAddress: order.user_addresses
@@ -144,6 +153,7 @@ async function checkout(userId, { addressId, cartItemIds }) {
 
     validatedItems.push({
       variantId: variant.id,
+      productId: product.id,
       quantity: item.quantity,
       price: hargaSaatIni,
       namaProduk: product.nama_produk,
@@ -170,6 +180,7 @@ async function checkout(userId, { addressId, cartItemIds }) {
     validatedItems.map((i) => ({
       order_id: order.id,
       variant_id: i.variantId,
+      product_id: i.productId,
       quantity: i.quantity,
       price: i.price,
       product_name: i.namaProduk,

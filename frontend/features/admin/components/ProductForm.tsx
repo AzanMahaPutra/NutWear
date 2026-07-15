@@ -288,7 +288,11 @@ export function ProductForm({ initialData, onSuccess }: ProductFormProps) {
           </Section>
 
           <Section title="Fitur Produk">
-            <ProductFeatureManager productId={savedProduct.id} initialFeatures={savedProduct.features ?? []} />
+            <ProductFeatureManager
+              key={savedProduct.id}
+              productId={savedProduct.id}
+              initialFeatures={savedProduct.features ?? []}
+            />
           </Section>
 
           <button

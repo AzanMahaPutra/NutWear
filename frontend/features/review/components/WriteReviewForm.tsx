@@ -9,7 +9,7 @@ import { reviewService } from "@/services/reviewService";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { cn } from "@/utils/cn";
-import { ReviewCardData } from "@/features/review/components/ReviewCard";
+import { OrderItemReview } from "@/types/user";
 
 const reviewSchema = z.object({
   comment: z.string().min(5, "Ulasan minimal 5 karakter").max(1000),
@@ -18,35 +18,46 @@ type ReviewFormValues = z.infer<typeof reviewSchema>;
 
 interface WriteReviewFormProps {
   productId: string;
-  onSuccess: (review: ReviewCardData) => void;
+  /** Pesanan & item pesanan sumber ulasan ini — wajib untuk membuat ulasan baru
+   * (UPDATE 7, ulasan hanya boleh berasal dari produk yang benar-benar dibeli). */
+  orderId: string;
+  orderItemId: string;
+  /** Diisi kalau user sedang mengedit ulasan yang sudah ada (bukan membuat baru) —
+   * submit akan memanggil reviewService.update (UPDATE terhadap data lama), tidak
+   * pernah membuat ulasan baru. */
+  initialReview?: OrderItemReview | null;
+  onSuccess: (review: OrderItemReview) => void;
 }
 
 /**
- * Form kirim ulasan (rating bintang + komentar) — memanggil Review API sungguhan.
+ * Form kirim/edit ulasan (rating bintang + komentar) — memanggil Review API sungguhan.
+ * UPDATE 7 — dipakai dari Riwayat Pesanan/Detail Pesanan lewat OrderItemReviewAction,
+ * bukan lagi dari halaman Detail Produk secara langsung.
  */
-export function WriteReviewForm({ productId, onSuccess }: WriteReviewFormProps) {
-  const [rating, setRating] = useState(5);
+export function WriteReviewForm({ productId, orderId, orderItemId, initialReview, onSuccess }: WriteReviewFormProps) {
+  const isEditing = Boolean(initialReview);
+  const [rating, setRating] = useState(initialReview?.rating ?? 5);
   const showToast = useToastStore((s) => s.showToast);
 
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<ReviewFormValues>({ resolver: zodResolver(reviewSchema) });
+  } = useForm<ReviewFormValues>({
+    resolver: zodResolver(reviewSchema),
+    defaultValues: { comment: initialReview?.comment ?? "" },
+  });
 
   async function onSubmit(values: ReviewFormValues) {
     try {
-      const review = await reviewService.create({ productId, rating, comment: values.comment });
-      showToast("Ulasan berhasil dikirim");
-      onSuccess({
-        id: review.id,
-        userName: review.userName,
-        rating: review.rating,
-        comment: review.comment,
-        createdAt: review.createdAt,
-      });
+      const review = isEditing
+        ? await reviewService.update(initialReview!.id, { rating, comment: values.comment })
+        : await reviewService.create({ orderId, orderItemId, productId, rating, comment: values.comment });
+
+      showToast(isEditing ? "Ulasan berhasil diperbarui" : "Ulasan berhasil dikirim");
+      onSuccess({ id: review.id, rating: review.rating, comment: review.comment });
     } catch (err) {
-      showToast(getApiErrorMessage(err, "Gagal mengirim ulasan"), "error");
+      showToast(getApiErrorMessage(err, isEditing ? "Gagal memperbarui ulasan" : "Gagal mengirim ulasan"), "error");
     }
   }
 
@@ -73,7 +84,7 @@ export function WriteReviewForm({ productId, onSuccess }: WriteReviewFormProps) 
         disabled={isSubmitting}
         className="w-full rounded-full bg-neutral-900 py-3 text-sm font-semibold text-white disabled:opacity-60"
       >
-        {isSubmitting ? "Mengirim..." : "Kirim Ulasan"}
+        {isSubmitting ? "Menyimpan..." : isEditing ? "Simpan Perubahan" : "Kirim Ulasan"}
       </button>
     </form>
   );

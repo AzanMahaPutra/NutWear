@@ -74,6 +74,13 @@ export type OrderStatus =
   | "expired"
   | "refund";
 
+/** Ulasan yang sudah pernah dibuat user untuk produk pada item pesanan ini (UPDATE 7). */
+export interface OrderItemReview {
+  id: string;
+  rating: number;
+  comment: string;
+}
+
 export interface OrderItem {
   id: string;
   productId?: string;
@@ -87,6 +94,10 @@ export interface OrderItem {
   harga: number;
   quantity: number;
   fiturSingkat?: string[];
+  /** UPDATE 7 — null kalau user belum pernah memberi ulasan untuk produk ini pada
+   * pesanan ini. Dipakai Riwayat Pesanan/Detail Pesanan untuk menentukan tombol
+   * "Beri Ulasan" (belum ada) atau "Edit Ulasan" (sudah ada). */
+  review?: OrderItemReview | null;
 }
 
 export interface OrderShippingAddress {

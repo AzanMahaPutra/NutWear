@@ -1,6 +1,6 @@
 import { apiClient } from "@/lib/apiClient";
 import { ApiResponse } from "@/lib/apiTypes";
-import { Order, OrderCustomer, OrderShippingAddress, OrderStatus } from "@/types/user";
+import { Order, OrderCustomer, OrderItemReview, OrderShippingAddress, OrderStatus } from "@/types/user";
 
 interface OrderApiResponse {
   id: string;
@@ -14,6 +14,7 @@ interface OrderApiResponse {
   items: {
     id: string;
     variantId: string;
+    productId?: string | null;
     quantity: number;
     price: number;
     namaProduk?: string;
@@ -22,6 +23,8 @@ interface OrderApiResponse {
     imageUrl?: string | null;
     warna?: string;
     ukuran?: string;
+    /** UPDATE 7 — Sistem Ulasan Produk berbasis Pesanan. */
+    review?: OrderItemReview | null;
   }[];
   shippingAddress?: OrderShippingAddress | null;
   customer?: OrderCustomer | null;
@@ -65,6 +68,7 @@ function toOrder(raw: OrderApiResponse): Order {
     items: raw.items.map((i) => ({
       id: i.id,
       variantId: i.variantId,
+      productId: i.productId ?? undefined,
       namaProduk: i.namaProduk,
       slug: i.slug,
       sku: i.sku,
@@ -73,6 +77,7 @@ function toOrder(raw: OrderApiResponse): Order {
       ukuran: i.ukuran,
       harga: i.price,
       quantity: i.quantity,
+      review: i.review ?? null,
     })),
   };
 }
