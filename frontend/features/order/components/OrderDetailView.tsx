@@ -1,14 +1,21 @@
 import Image from "next/image";
 import { ImageOff } from "lucide-react";
-import { Order } from "@/types/user";
+import { Order, OrderItemReview } from "@/types/user";
 import { OrderStatusBadge } from "@/components/shared/OrderStatusBadge";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 import { PAYMENT_STATUS_LABEL, PAYMENT_TYPE_LABEL } from "@/constants/order";
 import { ContinuePaymentButton } from "@/features/order/components/ContinuePaymentButton";
+import { OrderItemReviewAction } from "@/features/review/components/OrderItemReviewAction";
 
 interface OrderDetailViewProps {
   order: Order;
+  /** UPDATE 7 — dipanggil setelah user berhasil membuat/mengedit ulasan lewat modal
+   * ini, supaya parent (OrderCard) bisa memperbarui status tombol Beri/Edit Ulasan
+   * tanpa perlu fetch ulang seluruh Riwayat Pesanan. Opsional — kalau tidak
+   * disediakan, tombol ulasan tetap muncul tapi perubahan tidak ter-sinkron ke
+   * parent (dipakai kalau OrderDetailView dirender tanpa OrderCard). */
+  onReviewChange?: (itemId: string, review: OrderItemReview) => void;
 }
 
 /**
@@ -17,7 +24,7 @@ interface OrderDetailViewProps {
  * dipesan (thumbnail, SKU, varian, qty, harga, subtotal), dan info pengiriman.
  * Dipakai di dalam Modal generic yang sudah ada (lihat OrderHistoryView).
  */
-export function OrderDetailView({ order }: OrderDetailViewProps) {
+export function OrderDetailView({ order, onReviewChange }: OrderDetailViewProps) {
   const totalItem = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const paymentTypeLabel = order.payment?.paymentType
     ? PAYMENT_TYPE_LABEL[order.payment.paymentType] ?? order.payment.paymentType
@@ -80,8 +87,16 @@ export function OrderDetailView({ order }: OrderDetailViewProps) {
                   <ImageOff className="h-5 w-5 text-neutral-300" />
                 )}
               </div>
-              <div className="flex-1 text-sm">
-                <p className="font-semibold text-neutral-900">{item.namaProduk ?? "Produk tidak ditemukan"}</p>
+              <div className="min-w-0 flex-1 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-semibold text-neutral-900">{item.namaProduk ?? "Produk tidak ditemukan"}</p>
+                  <OrderItemReviewAction
+                    orderId={order.id}
+                    item={item}
+                    canReview={order.status === "selesai"}
+                    onReviewChange={(itemId, review) => onReviewChange?.(itemId, review)}
+                  />
+                </div>
                 {item.sku && <p className="text-xs text-neutral-400">SKU: {item.sku}</p>}
                 <p className="text-xs text-neutral-500">
                   Warna: {item.warna ?? "-"} · Ukuran: {item.ukuran ?? "-"}
