@@ -17,7 +17,7 @@ interface OrderDetailViewProps {
 export function OrderDetailView({ order }: OrderDetailViewProps) {
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 rounded-lg bg-neutral-50 p-4 text-sm">
+      <div className="grid grid-cols-1 gap-3 rounded-lg bg-neutral-50 p-4 text-sm sm:grid-cols-2">
         <div>
           <p className="text-xs text-neutral-400">Order ID</p>
           <p className="font-semibold text-neutral-900">#{order.id.slice(0, 8).toUpperCase()}</p>

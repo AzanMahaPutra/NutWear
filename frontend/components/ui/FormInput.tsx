@@ -18,7 +18,7 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
       <div className="w-full">
         <div
           className={cn(
-            "flex items-center gap-3 rounded-lg border bg-neutral-50 px-4 py-3.5",
+            "flex flex-col gap-1 rounded-lg border bg-neutral-50 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-3",
             error ? "border-red-400" : "border-neutral-200 focus-within:border-neutral-900"
           )}
         >
@@ -28,7 +28,10 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
           <input
             id={inputId}
             ref={ref}
-            className={cn("w-full bg-transparent text-right text-sm text-neutral-900 outline-none placeholder:text-neutral-400", className)}
+            className={cn(
+              "w-full bg-transparent text-left text-sm text-neutral-900 outline-none placeholder:text-neutral-400 sm:text-right",
+              className
+            )}
             {...props}
           />
         </div>

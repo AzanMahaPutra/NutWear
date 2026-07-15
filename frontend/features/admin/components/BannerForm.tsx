@@ -323,7 +323,7 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
 
       <Section title="Judul Banner">
         <FormInput label="Teks" placeholder="Judul banner" {...register("titleText")} error={errors.titleText?.message} />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <ColorField label="Warna Teks" register={register("titleColor")} />
           <SelectField label="Ukuran" register={register("titleHeading")} options={HEADINGS} labels={HEADING_LABEL} />
           <SelectField label="Ketebalan" register={register("titleWeight")} options={WEIGHTS} labels={WEIGHT_LABEL} />
@@ -332,7 +332,7 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
 
       <Section title="Sub Judul">
         <FormInput label="Teks" placeholder="Opsional" {...register("subtitleText")} />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <ColorField label="Warna Teks" register={register("subtitleColor")} />
           <SelectField label="Ukuran" register={register("subtitleHeading")} options={HEADINGS} labels={HEADING_LABEL} />
           <SelectField label="Ketebalan" register={register("subtitleWeight")} options={WEIGHTS} labels={WEIGHT_LABEL} />
@@ -347,7 +347,7 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
           {...register("priceNormal")}
           error={errors.priceNormal?.message}
         />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ColorField label="Warna Teks" register={register("priceNormalColor")} />
           <SelectField label="Ukuran" register={register("priceNormalHeading")} options={HEADINGS} labels={HEADING_LABEL} />
         </div>
@@ -355,7 +355,7 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
 
       <Section title="Harga Sebelum Diskon (Opsional)">
         <FormInput label="Harga" type="number" placeholder="Kosongkan jika tidak ada" {...register("priceBeforeDiscount")} />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ColorField label="Warna Teks" register={register("priceBeforeDiscountColor")} />
           <SelectField
             label="Ukuran"
@@ -375,18 +375,18 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
           {...register("pricePromo")}
           error={errors.pricePromo?.message}
         />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ColorField label="Warna Teks" register={register("pricePromoColor")} />
           <SelectField label="Ukuran" register={register("pricePromoHeading")} options={HEADINGS} labels={HEADING_LABEL} />
         </div>
       </Section>
 
       <Section title="Limited Offer (Opsional)">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormInput label="Mulai" type="date" {...register("offerStartDate")} />
           <FormInput label="Berakhir" type="date" {...register("offerEndDate")} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ColorField label="Warna Teks" register={register("offerColor")} />
           <SelectField label="Ukuran" register={register("offerHeading")} options={HEADINGS} labels={HEADING_LABEL} />
         </div>

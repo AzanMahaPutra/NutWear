@@ -30,8 +30,8 @@ export function WishlistItemRow({ item, onRemove, onAddToCart }: WishlistItemRow
         )}
       </Link>
 
-      <div className="flex-1">
-        <div className="mb-1 flex items-start justify-between">
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-start justify-between gap-2">
           <Link href={ROUTES.produkDetail(item.slug)} className="text-base font-semibold text-neutral-900">
             {item.namaProduk}
           </Link>

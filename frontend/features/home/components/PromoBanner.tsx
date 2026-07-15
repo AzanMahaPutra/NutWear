@@ -5,11 +5,11 @@ import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 
 const HEADING_TEXT_SIZE: Record<HeadingLevel, string> = {
-  h1: "text-5xl md:text-6xl",
-  h2: "text-4xl md:text-5xl",
-  h3: "text-3xl md:text-4xl",
-  h4: "text-2xl md:text-3xl",
-  h5: "text-lg md:text-xl",
+  h1: "text-3xl sm:text-4xl md:text-5xl lg:text-6xl",
+  h2: "text-2xl sm:text-3xl md:text-4xl lg:text-5xl",
+  h3: "text-xl sm:text-2xl md:text-3xl lg:text-4xl",
+  h4: "text-lg sm:text-xl md:text-2xl lg:text-3xl",
+  h5: "text-base sm:text-lg md:text-xl",
   h6: "text-sm md:text-base",
 };
 
@@ -35,11 +35,11 @@ export function PromoBanner({ banner }: { banner: Banner }) {
   const { title, subtitle, brand, priceNormal, priceBeforeDiscount, pricePromo, limitedOffer, cta } = banner;
 
   const content = (
-    <div className="relative isolate min-h-[480px] overflow-hidden bg-neutral-800">
+    <div className="relative isolate min-h-[360px] overflow-hidden bg-neutral-800 sm:min-h-[420px] md:min-h-[480px]">
       <Image src={banner.backgroundImageUrl} alt={title.text} fill sizes="100vw" className="object-cover" />
       <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
 
-      <div className="relative flex min-h-[480px] max-w-md flex-col justify-center gap-3 px-8 py-16 text-white md:px-16">
+      <div className="relative flex min-h-[360px] max-w-md flex-col justify-center gap-3 px-5 py-10 text-white sm:min-h-[420px] sm:px-8 sm:py-16 md:min-h-[480px] md:px-16">
         {brand.logoUrl ? (
           <Image
             src={brand.logoUrl}

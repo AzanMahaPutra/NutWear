@@ -131,7 +131,7 @@ export function OrderCard({ order, onOrderCancelled, autoOpenDetail }: OrderCard
             )}
           </Link>
 
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <Link href={item.slug ? ROUTES.produkDetail(item.slug) : "#"} className="text-sm font-semibold text-neutral-900">
               {item.namaProduk ?? "Produk tidak ditemukan"}
             </Link>
