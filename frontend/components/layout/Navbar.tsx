@@ -107,7 +107,7 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-100 bg-white">
-      <Container className="flex items-center gap-6 py-4">
+      <Container className="flex items-center justify-between gap-6 py-4 md:justify-start">
         <Logo />
 
         <div ref={searchBoxRef} className="relative hidden flex-1 md:block">
