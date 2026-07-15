@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ImageOff } from "lucide-react";
-import { Order, OrderItemReview } from "@/types/user";
+import { Order } from "@/types/user";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { OrderStatusBadge } from "@/components/shared/OrderStatusBadge";
 import { ROUTES } from "@/constants/routes";
@@ -15,7 +15,6 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { OrderDetailView } from "@/features/order/components/OrderDetailView";
 import { ContinuePaymentButton } from "@/features/order/components/ContinuePaymentButton";
-import { OrderItemReviewAction } from "@/features/review/components/OrderItemReviewAction";
 import { orderService } from "@/services/orderService";
 
 interface OrderCardProps {
@@ -46,30 +45,6 @@ export function OrderCard({ order, onOrderCancelled, autoOpenDetail }: OrderCard
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isBuyingAgain, setIsBuyingAgain] = useState(false);
-  // UPDATE 7 — Sistem Ulasan Produk berbasis Pesanan: menyimpan ulasan yang baru
-  // saja dibuat/diedit dalam sesi ini (key = order item id), supaya tombol
-  // "Beri Ulasan"/"Edit Ulasan" langsung ter-update tanpa perlu fetch ulang
-  // seluruh Riwayat Pesanan. `order` prop tetap jadi sumber data utama —
-  // override ini hanya menimpa item yang baru saja diubah pada sesi ini.
-  const [reviewOverrides, setReviewOverrides] = useState<Record<string, OrderItemReview>>({});
-
-  function handleReviewChange(itemId: string, review: OrderItemReview) {
-    setReviewOverrides((prev) => ({ ...prev, [itemId]: review }));
-  }
-
-  // Order dengan status review ter-update (dipakai untuk render list produk di
-  // kartu ini maupun diteruskan ke OrderDetailView supaya kedua tempat selalu
-  // konsisten menampilkan status ulasan yang sama).
-  const resolvedOrder = useMemo(
-    () => ({
-      ...order,
-      items: order.items.map((item) => ({
-        ...item,
-        review: reviewOverrides[item.id] ?? item.review ?? null,
-      })),
-    }),
-    [order, reviewOverrides]
-  );
 
   // BUG 5 — buka otomatis sekali saat kartu ini adalah pesanan yang baru saja dibayar.
   useEffect(() => {
@@ -143,7 +118,7 @@ export function OrderCard({ order, onOrderCancelled, autoOpenDetail }: OrderCard
         </div>
       </div>
 
-      {resolvedOrder.items.map((item) => (
+      {order.items.map((item) => (
         <div key={item.id} className="flex gap-4 border-b border-neutral-100 py-4 last:border-0">
           <Link
             href={item.slug ? ROUTES.produkDetail(item.slug) : "#"}
@@ -156,18 +131,10 @@ export function OrderCard({ order, onOrderCancelled, autoOpenDetail }: OrderCard
             )}
           </Link>
 
-          <div className="flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <Link href={item.slug ? ROUTES.produkDetail(item.slug) : "#"} className="text-sm font-semibold text-neutral-900">
-                {item.namaProduk ?? "Produk tidak ditemukan"}
-              </Link>
-              <OrderItemReviewAction
-                orderId={order.id}
-                item={item}
-                canReview={order.status === "selesai"}
-                onReviewChange={handleReviewChange}
-              />
-            </div>
+          <div className="min-w-0 flex-1">
+            <Link href={item.slug ? ROUTES.produkDetail(item.slug) : "#"} className="text-sm font-semibold text-neutral-900">
+              {item.namaProduk ?? "Produk tidak ditemukan"}
+            </Link>
             <p className="text-xs text-neutral-500">Warna: {item.warna}</p>
             <p className="mb-2 text-xs text-neutral-500">Ukuran: {item.ukuran}</p>
             <p className="mb-1 text-base font-bold text-neutral-900">{formatCurrency(item.harga)}</p>
@@ -208,7 +175,7 @@ export function OrderCard({ order, onOrderCancelled, autoOpenDetail }: OrderCard
       </div>
 
       <Modal open={isDetailOpen} onClose={() => setIsDetailOpen(false)} title="Detail Pesanan" size="xl">
-        <OrderDetailView order={resolvedOrder} onReviewChange={handleReviewChange} />
+        <OrderDetailView order={order} />
       </Modal>
 
       <ConfirmDialog

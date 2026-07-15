@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import { Container } from "@/components/ui/Container";
+import { Modal } from "@/components/ui/Modal";
 import { ProductCard } from "@/components/shared/ProductCard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
@@ -50,6 +52,10 @@ export function ProductShopView({
     newArrival: initialNewArrival,
   });
   const [page, setPage] = useState(1);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+
+  const activeFilterCount =
+    filter.kategoriIds.length + filter.ukuran.length + filter.warna.length + (filter.newArrival ? 1 : 0);
 
   const availableColors: ProductColor[] = useMemo(() => {
     const map = new Map<string, ProductColor>();
@@ -69,16 +75,18 @@ export function ProductShopView({
   return (
     <>
       <Container className="flex flex-col gap-8 pb-16 lg:flex-row">
-        <ProductFilterSidebar
-          filter={filter}
-          categories={categories}
-          availableColors={availableColors}
-          onToggleKategori={(id) => updateFilter("kategoriIds", toggleInArray(filter.kategoriIds, id))}
-          onToggleUkuran={(v) => updateFilter("ukuran", toggleInArray(filter.ukuran, v))}
-          onToggleWarna={(v) => updateFilter("warna", toggleInArray(filter.warna, v))}
-          onToggleNewArrival={() => updateFilter("newArrival", !filter.newArrival)}
-          onReset={() => setFilter(DEFAULT_FILTER_STATE)}
-        />
+        <div className="hidden lg:block">
+          <ProductFilterSidebar
+            filter={filter}
+            categories={categories}
+            availableColors={availableColors}
+            onToggleKategori={(id) => updateFilter("kategoriIds", toggleInArray(filter.kategoriIds, id))}
+            onToggleUkuran={(v) => updateFilter("ukuran", toggleInArray(filter.ukuran, v))}
+            onToggleWarna={(v) => updateFilter("warna", toggleInArray(filter.warna, v))}
+            onToggleNewArrival={() => updateFilter("newArrival", !filter.newArrival)}
+            onReset={() => setFilter(DEFAULT_FILTER_STATE)}
+          />
+        </div>
 
         <div className="flex-1">
           <div className="mb-6 flex items-center justify-between">
@@ -109,6 +117,43 @@ export function ProductShopView({
           )}
         </div>
       </Container>
+
+      {/* Tombol filter mengambang — khusus mobile/tablet kecil, supaya user tidak perlu
+          scroll balik ke atas untuk membuka filter saat sedang melihat-lihat produk. */}
+      <button
+        type="button"
+        onClick={() => setIsMobileFilterOpen(true)}
+        aria-label="Buka filter produk"
+        className="fixed left-4 top-1/2 z-30 flex -translate-y-1/2 items-center gap-2 rounded-full bg-neutral-900 px-4 py-3 text-white shadow-lg lg:hidden"
+      >
+        <SlidersHorizontal className="h-4 w-4" />
+        <span className="text-sm font-semibold">Filter</span>
+        {activeFilterCount > 0 && (
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-neutral-900">
+            {activeFilterCount}
+          </span>
+        )}
+      </button>
+
+      <Modal open={isMobileFilterOpen} onClose={() => setIsMobileFilterOpen(false)} title="Filter Produk">
+        <ProductFilterSidebar
+          filter={filter}
+          categories={categories}
+          availableColors={availableColors}
+          onToggleKategori={(id) => updateFilter("kategoriIds", toggleInArray(filter.kategoriIds, id))}
+          onToggleUkuran={(v) => updateFilter("ukuran", toggleInArray(filter.ukuran, v))}
+          onToggleWarna={(v) => updateFilter("warna", toggleInArray(filter.warna, v))}
+          onToggleNewArrival={() => updateFilter("newArrival", !filter.newArrival)}
+          onReset={() => setFilter(DEFAULT_FILTER_STATE)}
+        />
+        <button
+          type="button"
+          onClick={() => setIsMobileFilterOpen(false)}
+          className="mt-4 w-full rounded-full bg-neutral-900 py-3 text-sm font-semibold text-white"
+        >
+          Lihat {filtered.length} Produk
+        </button>
+      </Modal>
     </>
   );
 }

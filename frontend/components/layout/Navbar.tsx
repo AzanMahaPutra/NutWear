@@ -107,7 +107,7 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-100 bg-white">
-      <Container className="flex items-center justify-between gap-6 py-4 md:justify-start">
+      <Container className="flex items-center gap-6 py-4">
         <Logo />
 
         <div ref={searchBoxRef} className="relative hidden flex-1 md:block">
@@ -216,6 +216,15 @@ export function Navbar() {
             className="ml-3 w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
           />
         </form>
+
+        <div className="flex divide-x divide-neutral-100 rounded-lg border border-neutral-100 text-sm font-semibold text-neutral-900">
+          {NAV_LINKS.map((link) => (
+            <Link key={link.href} href={link.href} className="flex-1 py-2.5 text-center transition-colors hover:text-neutral-600">
+              {link.label}
+            </Link>
+          ))}
+        </div>
+
         <NavbarCategoryMenu variant="mobile" />
       </Container>
     </header>
