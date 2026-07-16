@@ -145,8 +145,11 @@ export function CheckoutView() {
         },
       });
 
-      // Backend sudah mengosongkan keranjang di sisi server saat checkout berhasil dibuat;
-      // sinkronkan ulang cache lokal supaya Navbar & halaman Keranjang ikut update.
+      // UPDATE 8 — Backend TIDAK lagi mengosongkan keranjang di sini; item yang baru
+      // saja di-checkout baru dihapus dari keranjang setelah pembayaran BERHASIL (lihat
+      // orderService.clearCartForPaidOrder di backend). fetchCart tetap dipanggil supaya
+      // Navbar/halaman Keranjang tersinkron dengan kondisi terbaru dari server (mis. kalau
+      // stok berubah di antara checkout & sekarang), bukan untuk mengosongkan keranjang.
       await fetchCartAfterOrder();
     } catch (err) {
       showToast(getApiErrorMessage(err, "Checkout gagal, silakan coba lagi"), "error");

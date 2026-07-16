@@ -100,9 +100,13 @@ function toResponse(order) {
  * 3. Validasi alamat pengiriman milik user.
  * 4. Hitung ongkir (shippingService — otoritatif di backend).
  * 5. Buat order + order_items (snapshot lengkap tiap item, lihat toResponse di atas).
- * 6. UPDATE 2 — Hapus item keranjang yang baru saja diproses (cartRepository.deleteByIds),
- *    TANPA menunggu pembayaran berhasil. Konsepnya: Keranjang -> Checkout -> Pesanan;
- *    begitu jadi pesanan, item tersebut sudah tidak lagi bagian dari keranjang.
+ * 6. UPDATE 8 — Item keranjang yang diproses TIDAK langsung dihapus di sini lagi.
+ *    Sebelumnya (Update 2) item langsung dibuang begitu order dibuat, sebelum
+ *    pembayaran selesai — kalau pembayaran gagal/terputus, item itu sudah hilang
+ *    dari keranjang tanpa pesanan pernah lunas. Sekarang item baru dihapus dari
+ *    keranjang setelah pembayaran BENAR-BENAR berhasil (lihat clearCartForPaidOrder,
+ *    dipanggil dari Webhook Midtrans & dari admin yang menandai pesanan Sudah Dibayar
+ *    secara manual). Selama menunggu pembayaran, item tetap terlihat di keranjang.
  * 7. Kurangi stok tiap varian (+ stock_logs).
  * 8. Minta Snap Token ke Midtrans, simpan di tabel payments.
  */
@@ -192,14 +196,8 @@ async function checkout(userId, { addressId, cartItemIds }) {
     }))
   );
 
-  // UPDATE 2 — Hapus HANYA item keranjang yang baru saja diproses checkout (cartItems,
-  // sudah difilter cartItemIds di atas kalau user checkout via checkbox), segera setelah
-  // order + order_items berhasil dibuat. TIDAK menunggu pembayaran berhasil — begitu
-  // sebuah item keranjang berubah jadi pesanan (order_items, snapshot lengkap), item
-  // tersebut sudah bukan lagi bagian dari keranjang, apa pun status pembayarannya nanti
-  // (Menunggu Pembayaran / Sudah Dibayar). Item yang tidak ikut dicentang/diproses tetap
-  // aman di keranjang (lihat cartRepository.deleteByIds — dibatasi ke id yang dikirim).
-  await cartRepository.deleteByIds(userId, cartItems.map((item) => item.id));
+  // UPDATE 8 — cart TIDAK lagi dihapus di sini (lihat clearCartForPaidOrder, dipanggil
+  // setelah pembayaran benar-benar berhasil lewat Webhook Midtrans / admin).
 
   // Kurangi stok + catat stock_logs untuk setiap item (sesuai alur sistem poin 7).
   for (const item of validatedItems) {
@@ -395,8 +393,21 @@ async function getOrderById(userId, orderId, isAdmin = false) {
 }
 
 async function updateOrderStatus(orderId, status) {
-  const order = await orderRepository.updateStatus(orderId, status);
-  if (!order) throw new AppError("Pesanan tidak ditemukan", 404);
+  const updated = await orderRepository.updateStatus(orderId, status);
+  if (!updated) throw new AppError("Pesanan tidak ditemukan", 404);
+
+  // UPDATE 8 — updateStatus() di atas hanya mengembalikan kolom `orders` (tanpa
+  // order_items), padahal clearCartForPaidOrder & toResponse butuh order_items
+  // lengkap (variant_id, harga, dst). Ambil ulang order lengkap sekali di sini.
+  const order = (await orderRepository.findById(orderId)) ?? updated;
+
+  // UPDATE 8 — kalau admin menandai pesanan Sudah Dibayar secara manual (di luar
+  // Webhook Midtrans, mis. pembayaran manual/transfer), item keranjang yang cocok
+  // ikut dibuang juga, sama seperti alur Webhook (lihat clearCartForPaidOrder).
+  if (status === "sudah_dibayar") {
+    await clearCartForPaidOrder(order).catch(() => {});
+  }
+
   const response = toResponse(order);
   // Update 1 — Notifikasi Status Pesanan: dikirim hanya ke pemilik pesanan, jangan
   // sampai kegagalan notifikasi menggagalkan update status pesanan itu sendiri.
@@ -482,6 +493,21 @@ async function deleteOrdersByFilter({ date, month, year, status }) {
   return deletedCount;
 }
 
+/**
+ * UPDATE 8 — Menghapus item keranjang yang sesuai dengan sebuah pesanan yang BARU SAJA
+ * lunas dibayar (dipanggil dari Webhook Midtrans setelah status order menjadi
+ * "sudah_dibayar", dan dari updateOrderStatus kalau admin menandai pesanan Sudah Dibayar
+ * secara manual). Dicocokkan lewat variant_id tiap order_items terhadap keranjang milik
+ * user yang sama — item keranjang lain (varian/produk berbeda) tidak ikut terhapus.
+ */
+async function clearCartForPaidOrder(order) {
+  const variantIds = (order.order_items || [])
+    .map((item) => item.variant_id)
+    .filter((id) => Boolean(id));
+  if (variantIds.length === 0) return;
+  await cartRepository.deleteByVariantIds(order.user_id, variantIds);
+}
+
 module.exports = {
   checkout,
   continuePayment,
@@ -493,4 +519,5 @@ module.exports = {
   deleteOrder,
   deleteOrdersByFilter,
   toResponse,
+  clearCartForPaidOrder,
 };

@@ -80,6 +80,19 @@ async function deleteByIds(userId, ids) {
   return true;
 }
 
+/**
+ * UPDATE 8 — Menghapus item keranjang berdasarkan variant_id, dibatasi pada milik
+ * `userId`. Dipakai setelah pembayaran BERHASIL (bukan lagi segera saat checkout,
+ * lihat orderService.checkout & orderService.clearCartForPaidOrder) untuk membuang
+ * item keranjang yang variannya sama dengan yang baru saja lunas dibayar.
+ */
+async function deleteByVariantIds(userId, variantIds) {
+  if (!Array.isArray(variantIds) || variantIds.length === 0) return true;
+  const { error } = await supabase.from("carts").delete().eq("user_id", userId).in("variant_id", variantIds);
+  if (error) throw new AppError(error.message, 500);
+  return true;
+}
+
 module.exports = {
   findAllByUser,
   findOne,
@@ -89,4 +102,5 @@ module.exports = {
   deleteById,
   deleteAllByUser,
   deleteByIds,
+  deleteByVariantIds,
 };

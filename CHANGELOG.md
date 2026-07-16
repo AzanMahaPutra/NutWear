@@ -1,94 +1,89 @@
-# CHANGELOG — Perbaikan Fitur Produk Agar Berlaku Per Produk
+# CHANGELOG — UPDATE 8: Keranjang Baru Dikosongkan Setelah Pembayaran Berhasil
 
-## 1. Audit yang Dilakukan
+## Ringkasan
 
-Sebelum melakukan perubahan apa pun, saya menelusuri seluruh alur data Fitur
-Produk dari database sampai ke tampilan:
+Sebelumnya (Update 2), item keranjang langsung dihapus begitu **checkout dibuat**
+(order berstatus Menunggu Pembayaran), tanpa menunggu pembayaran selesai. Kalau
+pembayaran gagal/terputus, item tersebut sudah hilang dari keranjang padahal
+pesanannya belum pernah lunas.
 
-- **Database** (`product_features`): setiap baris fitur sudah memiliki kolom
-  `product_id` dengan foreign key ke `products(id)` (lihat
-  `backend/src/database/migrations/20260711_add_product_features.sql`). Relasi
-  ini sudah benar — satu baris fitur hanya bisa menunjuk ke satu produk.
-- **Backend** (`productRepository.js`, `productService.js`,
-  `productController.js`, `productRoutes.js`): seluruh query
-  tambah/ambil/edit/hapus fitur sudah difilter berdasarkan `product_id` atau
-  `featureId` yang eksak, tidak ada query yang mengambil seluruh baris
-  `product_features` tanpa filter.
-- **Frontend Admin** (`ProductFeatureManager.tsx`, `ProductForm.tsx`,
-  `ProductManagementView.tsx`) dan **Frontend Detail Produk**
-  (`ProductDescription.tsx`): data fitur yang ditampilkan berasal dari
-  `product.features` milik produk yang sedang dibuka, bukan dari sumber
-  global.
+Diubah sesuai permintaan: item keranjang sekarang baru dihapus setelah
+pembayaran **BENAR-BENAR BERHASIL** (status pesanan menjadi "Sudah Dibayar"),
+bukan lagi segera saat checkout. Selama pesanan masih "Menunggu Pembayaran",
+produk yang sudah di-checkout tetap terlihat di keranjang.
 
-Jadi secara struktur data, backend sudah menyimpan Fitur Produk secara
-terpisah per produk. **Penyebab bug ada di sisi React (frontend), bukan di
-database maupun API.**
+## File yang diubah
 
-## 2. Penyebab Bug
+### `backend/src/repositories/cartRepository.js`
+- Menambah `deleteByVariantIds(userId, variantIds)` — menghapus baris keranjang
+  berdasarkan `variant_id`, dibatasi milik user tersebut. Dipakai untuk
+  membersihkan keranjang berdasarkan varian yang ada di pesanan yang baru lunas
+  (bukan berdasarkan id keranjang seperti sebelumnya, karena pada titik ini kita
+  hanya tahu pesanan & variannya, bukan id baris keranjang aslinya lagi).
 
-`ProductFeatureManager` menyimpan daftar fiturnya sendiri lewat
-`useState(initialFeatures)`, dan `ProductForm` menyimpan produk yang sedang
-dikelola lewat `useState(initialData)`. Kedua `useState` ini **hanya
-dijalankan sekali saat komponen pertama kali dipasang (mount)** — bukan setiap
-kali prop `productId` / `initialData` berubah.
+### `backend/src/services/orderService.js`
+- `checkout()`: **tidak lagi** memanggil penghapusan keranjang segera setelah
+  order dibuat. Item tetap ada di keranjang selama pesanan Menunggu Pembayaran.
+- **`clearCartForPaidOrder(order)`** (baru, diekspor) — mengambil `variant_id`
+  dari seluruh `order_items` pesanan, lalu menghapus baris keranjang milik user
+  yang sama dengan varian tersebut. Item keranjang varian/produk lain tidak ikut
+  terhapus.
+- `updateOrderStatus()` (dipakai endpoint admin `PATCH /orders/:id/status`):
+  sekarang mengambil ulang data order lengkap (`order_items` termasuk
+  `variant_id`) setelah update status, dan memanggil `clearCartForPaidOrder`
+  kalau status baru adalah "sudah_dibayar" — supaya kalau admin menandai
+  pesanan lunas secara manual (mis. transfer manual), keranjang tetap ikut
+  terbersihkan secara konsisten, sama seperti lewat Webhook Midtrans.
 
-Sebelumnya, `<ProductForm>` di `ProductManagementView.tsx` dan
-`<ProductFeatureManager>` di `ProductForm.tsx` dirender **tanpa prop `key`**.
-Tanpa `key` yang mengikat instance komponen ke produk yang sedang diedit,
-React berpotensi memakai ulang instance komponen yang sama (beserta seluruh
-state lokalnya) ketika Admin berpindah dari mengedit satu produk ke produk
-lain — sehingga daftar Fitur Produk dari produk sebelumnya masih terbawa dan
-ikut tampil/tersimpan seolah-olah milik produk yang baru dibuka. Ini adalah
-penyebab paling umum dari bug "data satu item bocor ke item lain" pada
-aplikasi React, dan cocok dengan gejala yang dilaporkan.
+### `backend/src/services/paymentService.js`
+- `handleMidtransNotification()` (Webhook Midtrans — jalur normal pembayaran
+  Snap): setelah status order berhasil diperbarui menjadi `"sudah_dibayar"`,
+  memanggil `orderService.clearCartForPaidOrder(order)`. Kegagalan pembersihan
+  keranjang **tidak** menggagalkan pemrosesan webhook itu sendiri (hanya
+  dicatat lewat `logger.warn`), supaya Midtrans tetap menerima respons sukses
+  dan tidak retry terus-menerus.
 
-## 3. Perubahan yang Dilakukan
+### `frontend/features/checkout/components/CheckoutView.tsx`
+- Hanya perbaikan komentar (tidak ada perubahan logic) — komentar lama
+  menyebutkan "backend sudah mengosongkan keranjang saat checkout", yang sudah
+  tidak akurat lagi. `fetchCartAfterOrder()` tetap dipanggil seperti sebelumnya
+  (untuk sinkronisasi umum), tapi sekarang akan menampilkan item yang baru
+  di-checkout **tetap ada** di keranjang sampai pembayarannya berhasil — sesuai
+  perilaku baru di backend, tanpa perlu perubahan kode di sisi frontend.
 
-Menambahkan `key` eksplisit yang diikat ke ID produk pada dua titik render,
-supaya React **selalu membuat instance komponen baru** (state lokal selalu
-bersih) setiap kali produk yang dikelola berbeda:
+## Kenapa tidak ada perubahan lain di frontend
 
-- `frontend/features/admin/components/ProductManagementView.tsx`
-  → `<ProductForm key={editingProduct?.id ?? "new-product"} .../>`
-- `frontend/features/admin/components/ProductForm.tsx`
-  → `<ProductFeatureManager key={savedProduct.id} .../>`
+Halaman Keranjang & Navbar selalu mengambil data keranjang langsung dari
+backend (`GET /cart`) setiap kali dibuka/disinkronkan — jadi begitu backend
+berhenti menghapus item saat checkout, tampilan di frontend otomatis ikut
+benar tanpa perlu disentuh.
 
-Tidak ada logika lain yang diubah. Tidak ada perubahan pada komponen,
-service, atau struktur folder lain.
+## Yang perlu diperhatikan
 
-## 4. Penyesuaian Struktur Database
+- Karena item checkout kini tetap terlihat di keranjang selama menunggu
+  pembayaran, secara teori user bisa meng-checkout item yang sama dua kali
+  sebelum membayar yang pertama (membuat 2 pesanan terpisah). Ini **belum**
+  diblokir secara eksplisit — tapi stok sudah dikurangi begitu order pertama
+  dibuat, jadi checkout kedua untuk varian yang sama akan otomatis ditolak
+  kalau stoknya sudah tidak cukup lagi. Kalau perilaku ini perlu diperketat
+  lebih lanjut (mis. mengunci/menyembunyikan item yang sedang ada pesanan
+  aktif), beri tahu saya — itu perubahan terpisah yang lebih besar.
 
-**Tidak ada.** Struktur tabel `product_features` (kolom `product_id` +
-foreign key ke `products`) sudah benar dan tidak perlu migration baru.
+---
 
-## 5. File yang Diubah
+## Catatan terpisah: Error "Endpoint POST .../continue-payment tidak ditemukan"
 
-- `frontend/features/admin/components/ProductManagementView.tsx`
-- `frontend/features/admin/components/ProductForm.tsx`
+Ini **bukan bug di kode** — sudah dicek langsung:
+- `backend/src/routes/orderRoutes.js` baris 21 sudah mendaftarkan
+  `router.post("/my/:id/continue-payment", orderController.continueMyOrderPayment)`.
+- `orderController.continueMyOrderPayment` ada & sudah diekspor dengan benar.
+- Route ini ter-mount lewat `/orders` → `/api/v1`, jadi path lengkapnya persis
+  sama dengan yang gagal tadi.
 
-## 6. Hasil Pengujian (ditelusuri lewat kode, per skenario)
-
-1. **Admin menambahkan 4 fitur pada Produk A** → `ProductFeatureManager`
-   dipasang dengan `key`/`productId` = ID Produk A; `addFeature` mengirim
-   `POST /products/{Produk A}/features`; keempat fitur tersimpan dengan
-   `product_id` = Produk A dan hanya tampil di Produk A. ✅
-2. **Admin membuka Produk B (belum punya fitur)** → Modal Edit Produk
-   di-remount dengan `key` = ID Produk B, sehingga `ProductFeatureManager`
-   dipasang ulang dengan `initialFeatures` dari data Produk B (`[]`), bukan
-   sisa state Produk A. Produk B tampil kosong. ✅
-3. **Admin menambah 2 fitur pada Produk B** → tersimpan dengan `product_id`
-   = Produk B saja; Produk A tetap memiliki 4 fitur miliknya (data di
-   database tidak tersentuh). ✅
-4. **Admin mengedit salah satu fitur Produk A** → `PUT
-   /products/features/{featureId}` hanya meng-update baris dengan id
-   tersebut (`product_id` tidak berubah); Produk B tidak terpengaruh. ✅
-5. **Admin menghapus fitur Produk C** → `DELETE
-   /products/features/{featureId}` hanya menghapus baris tersebut; fitur
-   Produk lain tetap utuh. ✅
-
-## Catatan
-
-Karena bug ini bersifat state di sisi client (bukan data yang salah di
-database), tidak ada data lama yang perlu diperbaiki/dimigrasikan. Disarankan
-Admin melakukan hard refresh (Ctrl+Shift+R) setelah update ini di-deploy agar
-build frontend terbaru yang dimuat.
+Pesan errornya sendiri ("Endpoint ... tidak ditemukan") adalah pesan baku dari
+`notFoundHandler.js`, yang **hanya** muncul kalau Express benar-benar tidak
+menemukan route yang cocok sama sekali. Karena route-nya sudah benar di kode
+ini, kesimpulannya: **backend yang sedang diakses saat error itu terjadi
+belum menjalankan kode terbaru** (belum di-redeploy/restart setelah endpoint
+ini ditambahkan). Redeploy backend dengan kode di ZIP ini seharusnya
+menyelesaikannya — tidak ada perubahan kode yang diperlukan untuk masalah ini.
