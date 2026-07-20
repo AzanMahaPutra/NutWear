@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { bannerService, Banner, BannerFormPayload } from "@/services/bannerService";
+import { revalidateHomepage } from "@/lib/revalidateHomepage";
 
 interface AdminBannerState {
   banners: Banner[];
@@ -29,21 +30,25 @@ export const useAdminBannerStore = create<AdminBannerState>((set, get) => ({
   addBanner: async (payload) => {
     const created = await bannerService.create(payload);
     set({ banners: [created, ...get().banners] });
+    revalidateHomepage();
   },
 
   updateBanner: async (id, payload) => {
     const updated = await bannerService.update(id, payload);
     set({ banners: get().banners.map((b) => (b.id === id ? updated : b)) });
+    revalidateHomepage();
   },
 
   deleteBanner: async (id) => {
     await bannerService.remove(id);
     set({ banners: get().banners.filter((b) => b.id !== id) });
+    revalidateHomepage();
   },
 
   toggleActive: async (id, current) => {
     const updated = await bannerService.update(id, { isActive: !current });
     set({ banners: get().banners.map((b) => (b.id === id ? updated : b)) });
+    revalidateHomepage();
   },
 
   moveBanner: async (id, direction) => {
@@ -66,5 +71,6 @@ export const useAdminBannerStore = create<AdminBannerState>((set, get) => ({
     ]);
 
     set({ banners: updatedBanners });
+    revalidateHomepage();
   },
 }));

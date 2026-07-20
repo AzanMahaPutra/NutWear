@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { heroBannerService, HeroBanner, HeroBannerFormPayload } from "@/services/heroBannerService";
+import { revalidateHomepage } from "@/lib/revalidateHomepage";
 
 interface AdminHeroBannerState {
   heroBanners: HeroBanner[];
@@ -29,21 +30,25 @@ export const useAdminHeroBannerStore = create<AdminHeroBannerState>((set, get) =
   addHeroBanner: async (payload) => {
     const created = await heroBannerService.create(payload);
     set({ heroBanners: [created, ...get().heroBanners] });
+    revalidateHomepage();
   },
 
   updateHeroBanner: async (id, payload) => {
     const updated = await heroBannerService.update(id, payload);
     set({ heroBanners: get().heroBanners.map((b) => (b.id === id ? updated : b)) });
+    revalidateHomepage();
   },
 
   deleteHeroBanner: async (id) => {
     await heroBannerService.remove(id);
     set({ heroBanners: get().heroBanners.filter((b) => b.id !== id) });
+    revalidateHomepage();
   },
 
   toggleActive: async (id, current) => {
     const updated = await heroBannerService.update(id, { isActive: !current });
     set({ heroBanners: get().heroBanners.map((b) => (b.id === id ? updated : b)) });
+    revalidateHomepage();
   },
 
   moveHeroBanner: async (id, direction) => {
@@ -66,5 +71,6 @@ export const useAdminHeroBannerStore = create<AdminHeroBannerState>((set, get) =
     ]);
 
     set({ heroBanners: updated });
+    revalidateHomepage();
   },
 }));

@@ -13,6 +13,25 @@ export const metadata: Metadata = {
 };
 
 /**
+ * PENTING — soal caching/statis:
+ * Tanpa baris `revalidate` di bawah ini, Next.js akan menganggap halaman ini
+ * 100% statis (tidak ada cookies/headers/searchParams yang dipakai), lalu
+ * Vercel akan me-render-nya SEKALI saat `next build` dan membekukan hasilnya
+ * jadi HTML statis. Efeknya: banner/hero banner yang ditambah, dihapus, atau
+ * diubah urutannya lewat Admin Dashboard TIDAK PERNAH muncul di Beranda
+ * sampai ada deploy ulang manual di Vercel — karena halaman publik tidak
+ * pernah fetch ulang ke backend Railway.
+ *
+ * `revalidate = 30` mengaktifkan ISR (Incremental Static Regeneration):
+ * Next.js tetap menyajikan HTML yang sudah di-cache (cepat), tapi setiap kali
+ * ada request setelah 30 detik berlalu sejak render terakhir, Next.js akan
+ * fetch ulang data dari backend di background lalu memperbarui cache untuk
+ * request berikutnya. Jadi perubahan dari Admin Dashboard akan otomatis
+ * tampil di Beranda dalam waktu maksimal ~30 detik, tanpa perlu redeploy.
+ */
+export const revalidate = 30;
+
+/**
  * Server Component — data diambil langsung dari Product API, Banner Produk
  * API, dan Hero Banner API sungguhan (dua API terpisah, lihat UPDATE 2:
  * Hero Banner tidak lagi berbagi data dengan Banner Produk).
