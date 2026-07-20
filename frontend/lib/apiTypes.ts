@@ -12,12 +12,18 @@ export interface ApiResponse<T> {
 }
 
 /**
- * Ekstrak pesan error yang ramah pengguna dari AxiosError, reusable di seluruh
- * service/komponen supaya tidak perlu menulis ulang optional chaining berulang.
+ * Ekstrak pesan error yang ramah pengguna dari AxiosError ATAU dari error
+ * Supabase Auth (mis. saat Reset Password — lihat authService.resetPassword),
+ * reusable di seluruh service/komponen supaya tidak perlu menulis ulang
+ * optional chaining berulang.
  */
 export function getApiErrorMessage(error: unknown, fallback = "Terjadi kesalahan, silakan coba lagi"): string {
   if (error instanceof AxiosError) {
     return (error.response?.data as { message?: string })?.message ?? fallback;
+  }
+  // Error dari supabase-js (mis. AuthError) berbentuk Error biasa dengan `.message`.
+  if (error instanceof Error && error.message) {
+    return error.message;
   }
   return fallback;
 }
