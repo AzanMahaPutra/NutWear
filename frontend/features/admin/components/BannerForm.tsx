@@ -59,7 +59,7 @@ const bannerSchema = z.object({
   priceBeforeDiscountColor: z.string().optional(),
   priceBeforeDiscountHeading: z.enum(HEADINGS).optional(),
 
-  pricePromo: z.coerce.number({ invalid_type_error: "Harga promo wajib diisi" }).min(0, "Harga tidak boleh negatif"),
+  pricePromo: z.union([z.coerce.number().min(0), z.literal("")]).optional(),
   pricePromoColor: z.string().optional(),
   pricePromoHeading: z.enum(HEADINGS).optional(),
 
@@ -277,8 +277,18 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
 
   async function onSubmit(values: BannerFormValues) {
     try {
+      // Harga Promo bersifat opsional di form (hanya diisi kalau memang ada promo).
+      // Kalau dikosongkan, kita anggap "tidak ada promo" — harga jual = Harga Normal.
+      // Ini WAJIB dilakukan di sini (bukan dibiarkan jadi 0) karena:
+      // 1) Backend masih mewajibkan pricePromo terisi (angka > 0) saat create.
+      // 2) PromoBanner di Beranda menampilkan pricePromo sebagai harga utama —
+      //    kalau nilainya 0, banner akan menampilkan "Rp 0" ke pembeli.
+      const pricePromoValue =
+        values.pricePromo === "" || values.pricePromo === undefined ? values.priceNormal : Number(values.pricePromo);
+
       const payload: Partial<BannerFormPayload> = {
         ...values,
+        pricePromo: pricePromoValue,
         priceBeforeDiscount: values.priceBeforeDiscount === "" ? null : Number(values.priceBeforeDiscount),
         backgroundImage,
         brandLogo,
@@ -367,11 +377,11 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
         <p className="text-xs text-neutral-500">Jika diisi, frontend menampilkan harga ini dengan efek strikethrough.</p>
       </Section>
 
-      <Section title="Harga Promo">
+      <Section title="Harga Promo (Opsional)">
         <FormInput
           label="Harga"
           type="number"
-          placeholder="0"
+          placeholder="Kosongkan jika tidak ada promo"
           {...register("pricePromo")}
           error={errors.pricePromo?.message}
         />
@@ -379,6 +389,9 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
           <ColorField label="Warna Teks" register={register("pricePromoColor")} />
           <SelectField label="Ukuran" register={register("pricePromoHeading")} options={HEADINGS} labels={HEADING_LABEL} />
         </div>
+        <p className="text-xs text-neutral-500">
+          Jika dikosongkan, banner akan menampilkan Harga Normal sebagai harga jual (tidak ada promo).
+        </p>
       </Section>
 
       <Section title="Limited Offer (Opsional)">

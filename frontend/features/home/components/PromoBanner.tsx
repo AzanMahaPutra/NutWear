@@ -68,25 +68,38 @@ export function PromoBanner({ banner }: { banner: Banner }) {
           </span>
         )}
 
-        <div className="flex items-baseline gap-3">
-          <span className={`${HEADING_TEXT_SIZE[pricePromo.heading]} font-bold`} style={{ color: pricePromo.color }}>
-            {formatCurrency(pricePromo.value)}
-          </span>
-          {priceBeforeDiscount && (
-            <span
-              className={`${HEADING_TEXT_SIZE[priceBeforeDiscount.heading]} line-through`}
-              style={{ color: priceBeforeDiscount.color }}
-            >
-              {formatCurrency(priceBeforeDiscount.value)}
-            </span>
-          )}
-        </div>
+        {(() => {
+          // Promo dianggap "aktif" hanya kalau pricePromo benar-benar diisi dan
+          // masuk akal (angka positif). Ini sengaja dibuat defensif — bukan cuma
+          // `priceBeforeDiscount != null` — supaya banner lama yang sempat
+          // tersimpan dengan pricePromo = 0 (bug sebelumnya) tetap fallback ke
+          // Harga Normal, bukan menampilkan "Rp 0" ke pembeli.
+          const hasActivePromo = pricePromo.value > 0 && pricePromo.value !== priceNormal.value;
 
-        {priceNormal.value > 0 && !priceBeforeDiscount && (
-          <span className={`${HEADING_TEXT_SIZE[priceNormal.heading]}`} style={{ color: priceNormal.color }}>
-            {formatCurrency(priceNormal.value)}
-          </span>
-        )}
+          if (hasActivePromo) {
+            return (
+              <div className="flex items-baseline gap-3">
+                <span className={`${HEADING_TEXT_SIZE[pricePromo.heading]} font-bold`} style={{ color: pricePromo.color }}>
+                  {formatCurrency(pricePromo.value)}
+                </span>
+                {priceBeforeDiscount && (
+                  <span
+                    className={`${HEADING_TEXT_SIZE[priceBeforeDiscount.heading]} line-through`}
+                    style={{ color: priceBeforeDiscount.color }}
+                  >
+                    {formatCurrency(priceBeforeDiscount.value)}
+                  </span>
+                )}
+              </div>
+            );
+          }
+
+          return (
+            <span className={`${HEADING_TEXT_SIZE[priceNormal.heading]} font-bold`} style={{ color: priceNormal.color }}>
+              {formatCurrency(priceNormal.value)}
+            </span>
+          );
+        })()}
 
         {limitedOffer && (
           <span className={`${HEADING_TEXT_SIZE[limitedOffer.heading]} font-medium`} style={{ color: limitedOffer.color }}>
