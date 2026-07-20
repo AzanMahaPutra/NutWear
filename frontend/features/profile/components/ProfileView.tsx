@@ -20,6 +20,7 @@ import { ProductCardSkeleton } from "@/components/ui/Skeleton";
 export function ProfileView() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const { addresses, isLoading, fetchAddresses, removeAddress } = useAddressStore();
   const showToast = useToastStore((s) => s.showToast);
   const [addAddressOpen, setAddAddressOpen] = useState(false);
@@ -33,9 +34,19 @@ export function ProfileView() {
     try {
       await authService.logout();
       showToast("Anda telah keluar");
-      router.push(ROUTES.login);
     } catch (err) {
+      // Tetap anggap logout berhasil di sisi client walaupun request ke server
+      // gagal (mis. koneksi terputus) — access token in-memory & cookie refresh
+      // sudah/akan dibersihkan (lihat authService.logout), jadi sesi lama tidak
+      // boleh tetap "nyangkut" hanya karena network error di request ini.
       showToast(getApiErrorMessage(err), "error");
+    } finally {
+      // INI YANG SEBELUMNYA HILANG: state user di authStore tidak pernah
+      // dikosongkan saat logout, jadi isAuthenticated tetap true (Navbar & AuthGuard
+      // masih menganggap user login) walaupun token/cookie sudah dihapus. Sekarang
+      // dikosongkan tanpa syarat supaya logout benar-benar mengakhiri sesi di client.
+      setUser(null);
+      router.push(ROUTES.login);
     }
   }
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ArrowLeft } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { FormInput } from "@/components/ui/FormInput";
 import { registerSchema, RegisterFormValues } from "@/features/auth/schemas/authSchemas";
@@ -37,6 +38,14 @@ export function RegisterForm() {
 
   return (
     <div>
+      <Link
+        href={ROUTES.home}
+        className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-neutral-900"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Kembali ke Beranda
+      </Link>
+
       <div className="mb-8 flex flex-col items-center">
         <Logo className="flex-col text-3xl" />
       </div>
