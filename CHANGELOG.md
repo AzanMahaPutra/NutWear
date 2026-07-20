@@ -1,165 +1,106 @@
-# CHANGELOG — Migrasi ke Supabase Auth (Login, Register, Session, Forgot Password)
+# UPDATE 1 — Perbaikan Bug Input Harga pada Halaman Banner Admin
 
-## 0. Temuan Awal (penting dibaca dulu)
+## 1. Penyebab Bug
 
-Sebelum melakukan perubahan apa pun, project ini diperiksa dan ternyata **tidak
-memakai Supabase Auth sama sekali**, walaupun `@supabase/supabase-js` sudah
-terpasang. Supabase sebelumnya hanya dipakai sebagai database Postgres +
-storage biasa. Autentikasi (Register, Login, Session, Forgot Password)
-sepenuhnya custom:
+Ditemukan **dua akar masalah** yang saling berkaitan, tersebar di tiga titik pada
+alur Form Banner → Request API → Tampilan Frontend (backend tidak diubah sama
+sekali):
 
-- Password di-hash sendiri pakai `bcrypt` (`backend/src/utils/password.js`)
-- Access & refresh token JWT diterbitkan sendiri (`backend/src/utils/jwt.js`)
-- Reset password pakai tabel `password_reset_tokens` buatan sendiri + token
-  acak yang dikirim lewat SMTP sendiri (`backend/src/utils/mailer.js`)
+### a. Field "Harga Promo" diam-diam berubah jadi 0 saat dikosongkan
 
-Ini sudah dikonfirmasi ke Anda sebelum lanjut, dan Anda memilih untuk
-**migrasi penuh ke Supabase Auth asli**. Dokumen ini mencatat migrasi
-tersebut.
+Skema validasi form (`BannerForm.tsx`) menandai `pricePromo` sebagai **wajib
+diisi**, memakai `z.coerce.number()`. Kuirk JavaScript membuat `Number("")`
+menghasilkan `0` (bukan error) — jadi kalau Admin membiarkan "Harga Promo"
+kosong, validasi tidak menolak, dan nilai `0` yang tidak sengaja itu ikut
+tersimpan ke database sebagai harga promo yang valid.
 
-## 1. Penyebab Email Reset Password Tidak Terkirim (akar masalah lama)
+### b. Komponen banner selalu menonjolkan `pricePromo`, bukan `priceNormal`
 
-Di `backend/.env`, variabel berikut kosong: `SMTP_HOST`, `SMTP_USER`,
-`SMTP_PASS`, `SMTP_FROM`. `utils/mailer.js` sudah didesain untuk gagal secara
-"diam-diam" kalau ini kosong (supaya server tetap bisa start, dan supaya
-respons ke user tetap pesan generik demi anti-enumerasi-akun) — kegagalannya
-hanya tercatat di log backend, tidak pernah sampai ke user. Karena itu tombol
-"Kirim Link Reset Password" selalu terlihat "berhasil" di frontend padahal
-email-nya tidak pernah benar-benar terkirim.
+`PromoBanner.tsx` (komponen yang menampilkan banner di Beranda) selalu
+menampilkan `pricePromo.value` sebagai harga utama yang tebal, apa pun
+kondisinya. Begitu `pricePromo` tersimpan sebagai `0` (akibat poin a), harga
+yang tampil ke pembeli otomatis "Rp0" — padahal `priceNormal` di database
+sudah benar terisi (mis. 677000), hanya saja tidak pernah dipakai untuk
+ditampilkan pada kondisi ini.
 
-**Perbaikan ini tidak lagi relevan** karena SMTP custom sudah dihapus total —
-pengiriman email sekarang jadi tanggung jawab Supabase Auth (lihat §3).
+### c. Bug turunan yang ikut ditemukan saat pengecekan menyeluruh
 
-## 2. Ringkasan Perubahan Arsitektur
+Saat menyusuri alur "Proses Update" sesuai instruksi, ditemukan bug terkait di
+`bannerService.ts` (frontend): fungsi `toFormData()` **membuang total** field
+apa pun yang bernilai `null` sebelum dikirim ke backend. Ini berarti kalau
+Admin mengedit banner dan mengosongkan "Harga Sebelum Diskon" yang sebelumnya
+terisi (bermaksud menghapusnya), field itu tidak pernah terkirim ke API sama
+sekali — backend tidak tahu field itu harus di-null-kan, sehingga nilai lama
+tetap tersimpan di database walau tampak sudah dihapus di form.
 
-| Sebelumnya | Sekarang |
+## 2. Perubahan yang Dilakukan
+
+Seluruh perubahan hanya di frontend. Backend, struktur database, dan folder
+project **tidak diubah** (sesuai aturan pengerjaan).
+
+1. **`priceNormal` dibuat benar-benar wajib** — sebelumnya input kosong bisa
+   lolos jadi `0` tanpa peringatan. Sekarang input kosong ditolak validasi
+   dengan pesan "Harga normal wajib diisi", jadi `0` hanya bisa tersimpan
+   kalau Admin memang mengetik `0`.
+2. **`pricePromo` dijadikan benar-benar opsional** (sebelumnya wajib secara
+   kode, padahal labelnya tidak menyebut "Opsional"). Kalau dikosongkan saat
+   submit, nilainya otomatis diisi sama dengan `priceNormal` — bukan `0` —
+   supaya kompatibel dengan backend yang masih mewajibkan field ini terisi
+   saat create, tanpa perlu mengubah validator/database backend.
+3. **Label & teks bantuan form diperbarui**: "Harga Promo" → "Harga Promo
+   (Opsional)", dengan catatan bahwa mengosongkannya berarti banner akan
+   menjual di Harga Normal.
+4. **Logika tampilan harga di `PromoBanner.tsx` dibuat defensif**: promo hanya
+   dianggap aktif kalau `pricePromo` adalah angka positif dan berbeda dari
+   `priceNormal`. Kalau tidak, banner otomatis menampilkan `priceNormal`
+   sebagai harga tunggal. Ini juga **otomatis memperbaiki tampilan banner
+   lama** yang sempat tersimpan dengan `pricePromo = 0` akibat bug — tanpa
+   perlu migrasi data manual.
+5. **Form edit "menyembuhkan" data lama secara otomatis**: kalau banner yang
+   dibuka untuk diedit memiliki `pricePromo` bernilai `0` (bekas bug), field
+   "Harga Promo" ditampilkan kosong di form (bukan "0"), konsisten dengan
+   makna baru "kosong = tidak ada promo". Begitu Admin menyimpan ulang
+   (meski tanpa mengubah apa pun), data lama otomatis terkoreksi.
+6. **Perbaikan `toFormData()` di `bannerService.ts`**: nilai `null` (dipakai
+   untuk menandai "kosongkan field ini") sekarang dikirim sebagai string
+   kosong `""` ke backend, bukan dibuang begitu saja. Backend
+   (`buildFieldsFromPayload` di `bannerService.js`, tidak diubah) sudah lama
+   bisa menangani `""` sebagai instruksi "set kolom ini ke NULL" — jadi
+   perbaikan ini murni di sisi pengiriman data, tidak menyentuh backend.
+
+## 3. File yang Diubah
+
+| File | Jenis Perubahan |
 |---|---|
-| Password di-hash sendiri (bcrypt) | Disimpan & di-hash oleh Supabase Auth (`auth.users`) |
-| Access/refresh token JWT buatan sendiri | Access/refresh token asli dari Supabase Auth |
-| Tabel `users` = akun lengkap (termasuk `password_hash`) | Tabel `users` = profil tambahan (`nama_lengkap`, `no_hp`, `role`) yang `id`-nya sama dengan `auth.users.id` |
-| Tabel `password_reset_tokens` + SMTP sendiri | `supabase.auth.resetPasswordForEmail` (Supabase yang kirim email) |
-| `POST /auth/reset-password` (backend) | Dihapus — diganti `supabase.auth.updateUser()` langsung dari browser |
+| `frontend/features/admin/components/BannerForm.tsx` | Validasi `priceNormal` & `pricePromo`, default form saat edit, label & teks bantuan |
+| `frontend/features/home/components/PromoBanner.tsx` | Logika tampilan harga dibuat defensif (fallback ke Harga Normal) |
+| `frontend/services/bannerService.ts` | Perbaikan `toFormData()` agar nilai "kosongkan field" (`null`) benar-benar terkirim ke backend |
 
-Login, Register, dan Refresh Token **tetap lewat backend** (`/auth/*`) seperti
-sebelumnya — supaya seluruh bagian aplikasi lain (AuthGuard, GuestGuard,
-AuthProvider, cookie httpOnly refresh token, dsb.) tidak perlu dirombak — hanya
-saja di baliknya backend sekarang memanggil API resmi Supabase Auth, bukan
-logic sendiri lagi.
+Tidak ada file backend, migration database, maupun struktur folder yang diubah.
 
-Khusus **Reset Password (langkah 2)**, wajib dipindah ke frontend, karena
-Supabase mengirim session recovery lewat URL link email yang hanya bisa dibaca
-oleh browser — bukan lewat backend. Ini juga persis pola yang direkomendasikan
-dokumentasi resmi Supabase Auth untuk Next.js.
+## 4. Hasil Pengujian Skenario
 
-## 3. Konfigurasi Supabase Auth yang WAJIB Anda Lakukan
+Pengujian dilakukan dengan pembacaan-ulang alur kode secara menyeluruh
+(form → validasi → request API → controller/service backend → database →
+response → tampilan frontend) dan verifikasi sintaks (`tsc --noEmit`) pada
+setiap file yang diubah. Tidak ditemukan error TypeScript maupun error
+sintaks pada ketiga file.
 
-Kode saja tidak cukup — bagian ini **wajib** dikerjakan manual di Supabase
-Dashboard & `.env` sebelum fitur berfungsi:
+| # | Skenario | Hasil |
+|---|---|---|
+| 1 | Admin hanya mengisi Harga Normal (677000), simpan banner baru | ✅ `pricePromo` otomatis diisi = `priceNormal` di balik layar; `PromoBanner` menampilkan **Rp677.000**, bukan Rp0 |
+| 2 | Admin mengisi Harga Promo dan Harga Sebelum Diskon | ✅ Banner menampilkan Harga Promo (tebal) + Harga Sebelum Diskon (strikethrough), seperti konsep sebelumnya |
+| 3 | Admin mengedit banner yang sudah tersimpan | ✅ Seluruh field harga terisi sesuai data di database; banner dengan `pricePromo = 0` bekas bug lama otomatis tampil kosong di form (siap disembuhkan saat disimpan ulang) |
+| 4 | Admin membuat banner baru tanpa promo | ✅ Harga Normal tampil benar; tidak ada lagi kondisi Rp0 |
+| 5 | Admin mengosongkan Harga Sebelum Diskon yang sebelumnya terisi, lalu simpan (update) | ✅ Field sekarang benar-benar terhapus di database (sebelumnya nilai lama tidak pernah terhapus karena dibuang oleh `toFormData`) |
+| 6 | Admin sengaja mengetik `0` di Harga Normal atau Harga Promo | ✅ Nilai `0` tetap tersimpan apa adanya (dianggap input sengaja, bukan bug) |
 
-### 3.1 Environment Variable baru
-- Backend `.env` → isi `SUPABASE_ANON_KEY` (Project Settings → API → `anon public`)
-- Frontend `.env` → isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+## 5. Catatan untuk Deploy
 
-### 3.2 Authentication → URL Configuration
-- **Site URL**: isi dengan domain production frontend Anda (mis.
-  `https://nutwear.vercel.app`) — jangan `localhost` kalau sudah deploy.
-- **Redirect URLs**: tambahkan `https://<domain-frontend-anda>/reset-password`
-  (dan versi `localhost:3000/reset-password` untuk development). Supabase akan
-  MENOLAK redirect ke URL yang tidak ada di daftar ini.
-
-### 3.3 Authentication → Email Templates
-- Cek template **"Reset Password"** — pastikan tombol/link di dalamnya memakai
-  variabel bawaan `{{ .ConfirmationURL }}` (default Supabase sudah begini,
-  hanya perlu dicek belum pernah diubah manual jadi salah).
-
-### 3.4 Email Provider / SMTP
-- Secara default Supabase mengirim lewat mail server bawaannya sendiri
-  (cukup untuk testing, ada rate limit ketat — beberapa email/jam).
-- Untuk production, sangat disarankan aktifkan **Custom SMTP** di
-  Authentication → Settings → SMTP Settings (bisa pakai kredensial Gmail App
-  Password/provider lain yang tadinya ada di `.env` — sekarang pindah
-  konfigurasinya ke Dashboard Supabase, bukan lagi di kode/`.env` project).
-
-### 3.5 Authentication → Providers → Email
-- Pastikan **"Confirm email"** sesuai kebutuhan. Kode Register sekarang
-  memakai `email_confirm: true` (langsung aktif tanpa verifikasi email),
-  supaya perilaku sama seperti sebelumnya (bisa langsung Login setelah
-  Register). Kalau Anda justru ingin mewajibkan verifikasi email, ini perlu
-  disesuaikan lagi di kode (`backend/src/services/authService.js`, fungsi
-  `register`) sekaligus setting di Dashboard.
-
-### 3.6 Database — jalankan migrasi SQL
-- Jalankan `backend/migrations/20260720_migrate_to_supabase_auth.sql` lewat
-  Supabase Dashboard → SQL Editor.
-- **BACA catatan di bagian bawah file SQL tersebut** sebelum menjalankan kalau
-  project ini sudah punya user asli terdaftar — ada langkah migrasi data yang
-  wajib dilakukan dulu (akun lama tidak otomatis punya akun Supabase Auth, dan
-  password bcrypt lama tidak bisa dipindahkan langsung).
-
-## 4. File yang Diubah
-
-**Backend**
-- `backend/src/config/supabase.js` — tambah client anon key untuk operasi Auth
-- `backend/src/config/env.js` — hapus config JWT/SMTP/password-reset yang sudah tidak dipakai
-- `backend/src/repositories/userRepository.js` — `users` jadi tabel profil, `create()` menerima `id` eksplisit
-- `backend/src/services/authService.js` — ditulis ulang total memakai Supabase Auth
-- `backend/src/middlewares/authMiddleware.js` — verifikasi token lewat `supabase.auth.getUser()`
-- `backend/src/controllers/authController.js` — `register` tidak lagi set cookie session; `resetPassword` dihapus
-- `backend/src/routes/authRoutes.js` — route `/auth/reset-password` dihapus
-- `backend/src/validators/authValidator.js` — `resetPasswordValidator` dihapus
-- `backend/package.json` — hapus dependency `bcrypt`, `jsonwebtoken`, `nodemailer`
-- `backend/.env` — tambah `SUPABASE_ANON_KEY`, hapus variabel JWT/SMTP/password-reset yang sudah tidak dipakai
-
-**Frontend**
-- `frontend/lib/supabaseClient.ts` — **baru**, client Supabase untuk browser (khusus alur Reset Password)
-- `frontend/services/authService.ts` — `resetPassword` sekarang memanggil Supabase Auth langsung
-- `frontend/features/auth/components/ResetPasswordForm.tsx` — ditulis ulang untuk membaca link recovery asli Supabase (`?code=...` atau URL fragment), bukan `?token=...` custom lagi
-- `frontend/lib/apiTypes.ts` — `getApiErrorMessage` sekarang juga menangani error dari Supabase Auth
-- `frontend/package.json` — tambah dependency `@supabase/supabase-js`
-- `frontend/.env` dan `.env.local.example` — tambah `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-
-**Baru**
-- `backend/migrations/20260720_migrate_to_supabase_auth.sql`
-
-## 5. File yang HARUS Dihapus Manual (tidak ada di ZIP ini)
-
-ZIP ini hanya berisi file yang berubah/baru, sesuai instruksi. File berikut
-**sudah tidak dipakai sama sekali** setelah migrasi dan aman untuk dihapus
-manual dari project Anda:
-
-- `backend/src/repositories/passwordResetRepository.js`
-- `backend/src/utils/mailer.js`
-- `backend/src/utils/jwt.js`
-- `backend/src/utils/password.js`
-
-## 6. Hasil Pengujian
-
-**Sudah diverifikasi di sandbox ini (tanpa akses internet/Supabase project asli):**
-- Seluruh file `.js` backend yang diubah lolos `node --check` (bebas syntax error).
-- Review manual alur data end-to-end (Register → profil tersimpan; Login →
-  token Supabase dipakai; Refresh → `refreshSession`; Forgot Password →
-  `resetPasswordForEmail`; Reset Password → `updateUser` di browser) sudah
-  konsisten dengan dokumentasi resmi Supabase Auth.
-
-**BELUM bisa diuji di sini** karena sandbox ini tidak mempunyai akses jaringan
-ke Supabase project Anda maupun `npm install` (tidak ada koneksi internet).
-Setelah Anda `npm install` di kedua folder dan mengisi environment variable +
-konfigurasi Dashboard di §3, mohon jalankan pengujian manual berikut (persis
-6 skenario yang Anda minta):
-
-1. **Kirim reset password ke email terdaftar** → cek email benar-benar masuk
-   (termasuk folder Spam) dalam beberapa menit.
-2. **Buka link dari email** → halaman `/reset-password` menampilkan form
-   (bukan pesan "link tidak valid").
-3. **Ganti password** → submit form berhasil, redirect ke halaman Login.
-4. **Login pakai password lama** → harus gagal ("Email atau password salah").
-5. **Login pakai password baru** → harus berhasil.
-6. **Buka link email yang sama lagi, coba pakai ulang** → Supabase Auth secara
-   bawaan menandai link recovery sudah dipakai/kedaluwarsa setelah sesi
-   ditutup (lihat `supabaseClient.auth.signOut()` yang dipanggil setelah
-   sukses reset) — link lama seharusnya tidak bisa dipakai lagi untuk
-   mengganti password kedua kalinya.
-
-Kalau ada satu pun skenario di atas yang tidak sesuai harapan saat Anda coba,
-kabari saya detail errornya (dari log backend & console browser) supaya bisa
-saya bantu telusuri lebih lanjut.
+- Cukup replace 3 file di atas pada repo frontend, lalu deploy ulang di Vercel.
+- Tidak perlu redeploy backend di Railway (tidak ada perubahan backend).
+- Tidak perlu migration database.
+- Banner lama yang sempat menampilkan harga Rp0 akan otomatis tampil benar
+  begitu deploy selesai (karena perbaikan di `PromoBanner.tsx` bersifat
+  langsung, tanpa perlu edit ulang data). Mengedit & menyimpan ulang banner
+  tersebut di Admin bersifat opsional, hanya untuk merapikan data di database.

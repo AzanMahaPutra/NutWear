@@ -51,7 +51,13 @@ const bannerSchema = z.object({
   subtitleHeading: z.enum(HEADINGS).optional(),
   subtitleWeight: z.enum(WEIGHTS).optional(),
 
-  priceNormal: z.coerce.number({ invalid_type_error: "Harga normal wajib diisi" }).min(0, "Harga tidak boleh negatif"),
+  priceNormal: z.preprocess(
+    (val) => (val === "" ? undefined : val),
+    z.coerce.number({
+      required_error: "Harga normal wajib diisi",
+      invalid_type_error: "Harga normal wajib diisi",
+    }).min(0, "Harga tidak boleh negatif")
+  ),
   priceNormalColor: z.string().optional(),
   priceNormalHeading: z.enum(HEADINGS).optional(),
 
@@ -128,7 +134,11 @@ function defaultsFrom(initialData?: Banner): Partial<BannerFormValues> {
     priceBeforeDiscount: initialData.priceBeforeDiscount?.value ?? "",
     priceBeforeDiscountColor: initialData.priceBeforeDiscount?.color ?? "#737373",
     priceBeforeDiscountHeading: initialData.priceBeforeDiscount?.heading ?? "h5",
-    pricePromo: initialData.pricePromo.value,
+    // pricePromo.value > 0 dianggap promo yang benar-benar diisi admin. Kalau nilainya
+    // 0 (kemungkinan data lama dari bug sebelum perbaikan ini), tampilkan kosong di
+    // form supaya konsisten dengan makna "kosong = tidak ada promo" — begitu admin
+    // menyimpan ulang, data lama otomatis terlogika-benarkan tanpa perlu migrasi data.
+    pricePromo: initialData.pricePromo.value > 0 ? initialData.pricePromo.value : "",
     pricePromoColor: initialData.pricePromo.color,
     pricePromoHeading: initialData.pricePromo.heading,
     offerStartDate: initialData.limitedOffer?.startDate ?? "",

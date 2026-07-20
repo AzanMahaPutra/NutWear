@@ -117,12 +117,16 @@ export interface BannerFormPayload {
 function toFormData(payload: BannerFormPayload) {
   const formData = new FormData();
   Object.entries(payload).forEach(([key, value]) => {
-    if (value === undefined || value === null) return;
+    if (value === undefined) return;
     if (key === "backgroundImage" || key === "brandLogo") {
       if (value instanceof File) formData.append(key, value);
       return;
     }
-    formData.append(key, String(value));
+    // null = "kosongkan field ini secara sengaja" (mis. hapus Harga Sebelum Diskon
+    // saat edit). FormData tidak bisa membawa nilai null asli, jadi dikirim sebagai
+    // string kosong — yang sudah ditangani dengan benar oleh nullableNum/nullableStr
+    // di backend (services/bannerService.js) sebagai "set kolom ini ke NULL".
+    formData.append(key, value === null ? "" : String(value));
   });
   return formData;
 }
