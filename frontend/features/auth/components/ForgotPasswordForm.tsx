@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,23 +9,44 @@ import { FormInput } from "@/components/ui/FormInput";
 import { forgotPasswordSchema, ForgotPasswordFormValues } from "@/features/auth/schemas/authSchemas";
 import { ROUTES } from "@/constants/routes";
 import { useToastStore } from "@/stores/toastStore";
+import { authService } from "@/services/authService";
 
 /**
- * Form Lupa Password — mengirim link reset ke email (dummy di Fase 1).
+ * Form Lupa Password — mengirim link reset ke email.
+ *
+ * PENTING: form ini SELALU menampilkan pesan sukses yang sama (state `sent`)
+ * begitu request ke backend selesai TANPA error jaringan/server, terlepas
+ * dari apakah email yang dimasukkan benar-benar terdaftar atau tidak. Backend
+ * juga sengaja membalas dengan pesan generik yang sama persis untuk kedua
+ * kasus (lihat authController.forgotPassword) — supaya form ini tidak bisa
+ * dipakai untuk menebak/mengonfirmasi email mana saja yang terdaftar di
+ * sistem (pencegahan enumerasi akun). Frontend TIDAK PERNAH menampilkan
+ * pesan seperti "Email tidak ditemukan". `sent` sengaja dikelola manual
+ * (bukan memakai `isSubmitSuccessful` dari React Hook Form) supaya perilaku
+ * "hanya sukses kalau tidak ada error jaringan" ini eksplisit dan tidak
+ * tergantung detail implementasi internal library form.
  */
 export function ForgotPasswordForm() {
   const showToast = useToastStore((s) => s.showToast);
+  const [sent, setSent] = useState(false);
 
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting, isSubmitSuccessful },
+    formState: { errors, isSubmitting },
   } = useForm<ForgotPasswordFormValues>({ resolver: zodResolver(forgotPasswordSchema) });
 
   async function onSubmit(values: ForgotPasswordFormValues) {
-    // TODO Fase 3: ganti dengan authService.forgotPassword(values)
-    console.log("forgot password submit", values);
-    showToast("Link reset password telah dikirim (dummy)");
+    try {
+      await authService.forgotPassword(values);
+      setSent(true);
+    } catch {
+      // Kegagalan jaringan/server (bukan "email tidak ditemukan" — backend tidak
+      // pernah mengirim error untuk kasus itu) ditampilkan sebagai toast error
+      // biasa. `sent` tetap false supaya user tahu permintaannya belum tentu
+      // berhasil dan bisa mencoba lagi.
+      showToast("Gagal menghubungi server, silakan coba lagi", "error");
+    }
   }
 
   return (
@@ -38,9 +60,10 @@ export function ForgotPasswordForm() {
         Masukkan email Anda, kami akan mengirimkan link untuk reset password.
       </p>
 
-      {isSubmitSuccessful ? (
+      {sent ? (
         <p className="rounded-lg bg-green-50 p-4 text-sm text-green-700">
-          Silakan cek email Anda untuk melanjutkan proses reset password.
+          Jika email yang Anda masukkan terdaftar pada sistem, kami akan mengirimkan tautan untuk mengatur ulang
+          password. Silakan cek email Anda (termasuk folder Spam/Promosi).
         </p>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

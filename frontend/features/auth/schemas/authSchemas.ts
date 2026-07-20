@@ -27,3 +27,14 @@ export const forgotPasswordSchema = z.object({
   email: z.string().min(1, "Email wajib diisi").email("Format email tidak valid"),
 });
 export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    password: z.string().min(6, "Password minimal 6 karakter"),
+    confirmPassword: z.string().min(6, "Konfirmasi password minimal 6 karakter"),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Konfirmasi password tidak cocok",
+    path: ["confirmPassword"],
+  });
+export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;

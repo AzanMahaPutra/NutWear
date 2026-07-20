@@ -45,4 +45,22 @@ export const authService = {
     const { data } = await apiClient.get<ApiResponse<{ user: User }>>("/auth/me");
     return data.data.user;
   },
+
+  /**
+   * Langkah 1 Forgot Password. Backend SELALU membalas dengan pesan sukses
+   * generik yang sama (email ditemukan atau tidak) — lihat authController.js
+   * (backend) — supaya tidak mungkin dipakai untuk enumerasi akun. Fungsi ini
+   * hanya meneruskan pesan tersebut ke pemanggil, tidak menyembunyikan apa pun
+   * lagi di sisi frontend.
+   */
+  async forgotPassword(payload: { email: string }) {
+    const { data } = await apiClient.post<ApiResponse<null>>("/auth/forgot-password", payload);
+    return data.message;
+  },
+
+  /** Langkah 2 Forgot Password — dipanggil dari halaman /reset-password?token=... */
+  async resetPassword(payload: { token: string; password: string; confirmPassword: string }) {
+    const { data } = await apiClient.post<ApiResponse<null>>("/auth/reset-password", payload);
+    return data.message;
+  },
 };
