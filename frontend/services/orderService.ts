@@ -37,12 +37,38 @@ interface OrderApiResponse {
   cancelledBy?: "user" | "admin" | null;
 }
 
-/** Filter halaman Pesanan Admin: tanggal spesifik, atau bulan(+tahun), dan/atau status. */
+/** Filter halaman Pesanan Admin: tanggal spesifik, atau bulan(+tahun), status, dan/atau search Order ID. */
 export interface OrderFilterParams {
   date?: string;
   month?: string;
   year?: string;
   status?: OrderStatus | "";
+  /** UPDATE — Search Order ID: partial/case-insensitive, bisa dikombinasikan dengan filter lain. */
+  search?: string;
+}
+
+/** UPDATE — Search Order ID: bentuk data satu baris pada dropdown autocomplete Search Bar. */
+export interface OrderSearchSuggestion {
+  id: string;
+  namaUser: string | null;
+  createdAt: string;
+  status: OrderStatus;
+}
+
+interface OrderSearchSuggestionApiResponse {
+  id: string;
+  namaUser: string | null;
+  createdAt: string;
+  status: OrderStatus;
+}
+
+function toSearchSuggestion(raw: OrderSearchSuggestionApiResponse): OrderSearchSuggestion {
+  return {
+    id: raw.id,
+    namaUser: raw.namaUser,
+    createdAt: raw.createdAt,
+    status: raw.status,
+  };
 }
 
 function toOrder(raw: OrderApiResponse): Order {
@@ -136,6 +162,17 @@ export const orderService = {
       params: cleanFilterParams(filters),
     });
     return data.data.map(toOrder);
+  },
+
+  /** UPDATE — Search Order ID: daftar saran untuk dropdown autocomplete Search Bar. */
+  async searchSuggestions(term: string): Promise<OrderSearchSuggestion[]> {
+    const q = term.trim();
+    if (!q) return [];
+    const { data } = await apiClient.get<ApiResponse<OrderSearchSuggestionApiResponse[]>>(
+      "/orders/search-suggestions",
+      { params: { q } }
+    );
+    return data.data.map(toSearchSuggestion);
   },
 
   async updateStatus(orderId: string, status: OrderStatus) {

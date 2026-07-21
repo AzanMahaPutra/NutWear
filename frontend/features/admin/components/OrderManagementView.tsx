@@ -5,6 +5,7 @@ import { Eye, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/shared/DataTable";
 import { OrderStatusSelect } from "@/features/admin/components/OrderStatusSelect";
 import { OrderDetailView } from "@/features/admin/components/OrderDetailView";
+import { OrderSearchBar } from "@/features/admin/components/OrderSearchBar";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { orderService, OrderFilterParams } from "@/services/orderService";
@@ -34,6 +35,10 @@ export function OrderManagementView() {
   const [monthFilter, setMonthFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "">("");
+  // UPDATE — Search Order ID: kata kunci sudah di-debounce di dalam OrderSearchBar,
+  // jadi di sini tinggal dipakai langsung sebagai bagian dari filter aktif.
+  const [searchFilter, setSearchFilter] = useState("");
+  const [searchResetSignal, setSearchResetSignal] = useState(0);
 
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
@@ -46,6 +51,7 @@ export function OrderManagementView() {
     month: dateFilter ? "" : monthFilter,
     year: dateFilter ? "" : yearFilter,
     status: statusFilter,
+    search: searchFilter,
   };
 
   async function fetchOrders() {
@@ -63,13 +69,16 @@ export function OrderManagementView() {
   useEffect(() => {
     fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFilter, monthFilter, yearFilter, statusFilter]);
+  }, [dateFilter, monthFilter, yearFilter, statusFilter, searchFilter]);
 
   function resetFilters() {
     setDateFilter("");
     setMonthFilter("");
     setYearFilter("");
     setStatusFilter("");
+    setSearchFilter("");
+    // Memberi tahu OrderSearchBar (state pencariannya sendiri) untuk ikut dikosongkan.
+    setSearchResetSignal((n) => n + 1);
   }
 
   async function handleStatusChange(orderId: string, status: OrderStatus) {
@@ -111,10 +120,16 @@ export function OrderManagementView() {
     }
   }
 
-  const hasActiveFilter = Boolean(dateFilter || monthFilter || yearFilter || statusFilter);
+  const hasActiveFilter = Boolean(dateFilter || monthFilter || yearFilter || statusFilter || searchFilter);
 
   return (
     <div className="p-6">
+      {/* UPDATE — Search Order ID: Search Bar di bagian atas halaman, bisa dikombinasikan
+          dengan seluruh filter tanggal/bulan/tahun/status di bawahnya. */}
+      <div className="mb-4">
+        <OrderSearchBar onSearch={setSearchFilter} resetSignal={searchResetSignal} />
+      </div>
+
       {/* Filter Tanggal / Bulan+Tahun / Status — semua bisa dikombinasikan sekaligus (poin 1-4) */}
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
@@ -202,7 +217,15 @@ export function OrderManagementView() {
       <DataTable
         rowKey={(o) => o.id}
         data={orders}
-        emptyTitle={isLoading ? "Memuat..." : hasActiveFilter ? "Tidak ada pesanan yang cocok dengan filter" : "Belum ada pesanan"}
+        emptyTitle={
+          isLoading
+            ? "Memuat..."
+            : searchFilter
+              ? "Tidak ada pesanan yang sesuai dengan pencarian."
+              : hasActiveFilter
+                ? "Tidak ada pesanan yang cocok dengan filter"
+                : "Belum ada pesanan"
+        }
         columns={[
           { key: "id", header: "Order ID", render: (o) => `#${o.id.slice(0, 8).toUpperCase()}` },
           { key: "tanggal", header: "Tanggal", render: (o) => formatDate(o.createdAt) },

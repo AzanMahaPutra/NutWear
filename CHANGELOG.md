@@ -1,111 +1,144 @@
-# CHANGELOG — Notifikasi Stok Menipis untuk Admin
+# CHANGELOG — Fitur Pencarian Pesanan Berdasarkan Order ID
 
-## Ringkasan
+## Catatan Penting Tentang Format Order ID
 
-Menambahkan sistem notifikasi stok menipis di Dashboard Admin dan Manajemen
-Produk, dengan Batas Minimum Stok (default **15**) yang bisa diubah Admin
-kapan saja lewat halaman Pengaturan. Tidak ada refactor besar, struktur folder,
-atau fitur lain yang diubah — seluruh perubahan menambah kode baru di atas
-komponen/service/struktur database yang sudah ada.
+Dokumen permintaan menyebut contoh Order ID berformat `ORDER-20260710-00125`.
+Setelah memeriksa project, **tidak ada kolom/format Order ID seperti itu** —
+`orders.id` adalah `uuid` (primary key bawaan Supabase), dan halaman Pesanan
+Admin yang sudah ada menampilkannya sebagai `#XXXXXXXX` (8 karakter pertama
+UUID, huruf besar) — lihat `OrderManagementView.tsx`, kolom "Order ID":
+`render: (o) => '#' + o.id.slice(0, 8).toUpperCase()`.
 
-## File yang Diubah/Ditambahkan
+Mengikuti aturan pengerjaan ("gunakan struktur database yang sudah ada",
+"jangan melakukan refactor besar"), fitur ini dibangun di atas kolom `id`
+(UUID) yang sudah ada — **bukan** membuat kolom/format Order ID baru. Semua
+pencarian bekerja terhadap UUID asli (case-insensitive, partial match),
+konsisten dengan tampilan `#XXXXXXXX` yang sudah ada di tabel. Kalau
+sebenarnya dibutuhkan format nomor pesanan yang human-readable
+(`ORDER-YYYYMMDD-NNNNN`) sebagai kolom baru, itu perubahan skema yang lebih
+besar (migration + backfill + penyesuaian tampilan) di luar cakupan
+permintaan ini — beri tahu saya kalau itu yang dimaksud.
+
+---
+
+## Ringkasan Perubahan
+
+Menambahkan Search Bar "Cari berdasarkan Order ID..." di bagian atas halaman
+Pesanan Admin, dengan:
+
+- Pencarian manual (sebagian/seluruh Order ID), real-time dengan debounce.
+- Dropdown autocomplete yang menampilkan Order ID, Nama User, Tanggal
+  Pemesanan, dan Status Pembayaran.
+- Exact match, partial match, dan case-insensitive.
+- Bisa dikombinasikan dengan filter Tanggal/Bulan/Tahun/Status yang sudah ada.
+- Pencarian & autocomplete dijalankan di backend (bukan filter frontend) +
+  index database, supaya tetap cepat walau data sudah sangat banyak.
+- Empty state khusus ("Tidak ada pesanan yang sesuai dengan pencarian.")
+  tanpa menampilkan error.
+
+## File yang Diubah / Ditambahkan
 
 ### Backend
 
-| File | Status | Keterangan |
-|---|---|---|
-| `backend/src/database/migrations/20260722_add_stock_settings_and_low_stock.sql` | Baru | Migration tabel `stock_settings` (single-row, id selalu 1) untuk menyimpan Batas Minimum Stok. |
-| `backend/src/database/schema.sql` | Diubah | Menambahkan tabel `stock_settings` beserta baris default (`minimum_stock = 15`). |
-| `backend/src/repositories/stockRepository.js` | Diubah | Tambah `getMinimumStock`, `updateMinimumStock`, `findLowStockVariants(threshold)`. |
-| `backend/src/services/stockService.js` | Diubah | Tambah `getMinimumStock`, `updateMinimumStock` (validasi angka bulat > 0), `getLowStockReport()` (mengelompokkan varian stok menipis/habis per produk). |
-| `backend/src/controllers/stockController.js` | Diubah | Tambah endpoint `getSettings`, `updateSettings`, `getLowStock`. |
-| `backend/src/validators/stockValidator.js` | Diubah | Tambah `updateMinimumStockValidator` (memvalidasi `minimumStock` sebagai integer ≥ 1). |
-| `backend/src/routes/stockRoutes.js` | Diubah | Tambah route: `GET /stock/settings`, `PUT /stock/settings`, `GET /stock/low-stock` (khusus Admin, mengikuti middleware `requireAuth` + `requireRole("admin")` yang sudah ada). |
+| File | Perubahan |
+|---|---|
+| `backend/src/validators/orderValidator.js` | Tambah validasi query `search` (untuk `GET /orders`) dan validator baru `orderSearchSuggestionsValidator` (untuk `GET /orders/search-suggestions`). |
+| `backend/src/repositories/orderRepository.js` | Tambah `applySearch()` (partial + case-insensitive match pada `id::text` via `ILIKE`), dipanggil dari `applyFilters()` supaya otomatis ikut ke `findAll()` (list pesanan). Tambah fungsi baru `searchSuggestions(term, limit)` untuk dropdown autocomplete (select kolom minimal + `limit`, bukan `ORDER_SELECT` lengkap). |
+| `backend/src/services/orderService.js` | `getAllOrders()` meneruskan parameter `search`. Tambah `getOrderSearchSuggestions(term)` + mapper `toSearchSuggestion()`. |
+| `backend/src/controllers/orderController.js` | `getAllOrders` membaca `search` dari query string. Tambah controller `getOrderSearchSuggestions`. |
+| `backend/src/routes/orderRoutes.js` | Tambah route baru `GET /orders/search-suggestions` (khusus admin), didaftarkan **sebelum** `GET /orders/:id` supaya path-nya tidak tertangkap sebagai parameter `:id`. |
+| `backend/src/database/migrations/20260723_add_orders_search_index.sql` | **Migration baru** — aktifkan extension `pg_trgm` + index GIN trigram pada `orders (id::text)` supaya pencarian `ILIKE '%keyword%'` tetap cepat. |
 
 ### Frontend
 
-| File | Status | Keterangan |
+| File | Perubahan |
+|---|---|
+| `frontend/services/orderService.ts` | Tambah field `search` di `OrderFilterParams`. Tambah tipe `OrderSearchSuggestion` dan method `orderService.searchSuggestions(term)` yang memanggil `GET /orders/search-suggestions`. |
+| `frontend/features/admin/components/OrderSearchBar.tsx` | **Komponen baru** — input pencarian + dropdown autocomplete, debounce 300ms, fetch saran dari backend, tutup dropdown saat dipilih/dikosongkan/Escape/klik di luar. |
+| `frontend/features/admin/components/OrderManagementView.tsx` | Pasang `OrderSearchBar` di atas filter yang sudah ada, tambahkan `searchFilter` ke state filter aktif & effect fetch, sinkronkan dengan tombol "Reset Filter", tambahkan pesan empty state khusus untuk pencarian. |
+
+Tidak ada file lain yang diubah — fitur/halaman lain (Produk, Kategori,
+Banner, Pelanggan, Review, dst) tidak tersentuh.
+
+## Cara Kerja Search Order ID
+
+1. Admin mengetik di Search Bar (`OrderSearchBar`). Nilai input di-debounce
+   300ms (memakai hook `useDebouncedValue` yang sudah ada di project, pola
+   yang sama dipakai `ProductManagementView`), supaya tidak mengirim request
+   di setiap ketukan tombol.
+2. Setelah debounce, kata kunci dikirim ke parent (`OrderManagementView`)
+   lewat `onSearch`, disimpan sebagai `searchFilter`, lalu digabung ke object
+   `filters` yang sama dengan filter Tanggal/Bulan/Tahun/Status yang sudah
+   ada — otomatis memicu `fetchOrders()` (`GET /orders?search=...&status=...&...`).
+3. Di backend, `orderRepository.applySearch()` menambahkan filter
+   `id::text ILIKE '%keyword%'` ke query Supabase — mendukung Exact Match,
+   Partial Match (di mana pun posisi substring-nya), dan Case Insensitive,
+   dan tetap digabung dengan filter tanggal/status yang sudah ada
+   (`applyFilters` menerapkan semuanya sekaligus, bukan saling menimpa).
+4. Kalau hasil pencarian kosong, tabel menampilkan empty state
+   "Tidak ada pesanan yang sesuai dengan pencarian." (bukan pesan error).
+5. Kalau hasil hanya 1 transaksi, Admin bisa langsung membuka Detail Pesanan
+   lewat tombol "Lihat Detail" (ikon mata) yang sudah ada di setiap baris.
+
+## Cara Kerja Autocomplete
+
+1. Bersamaan dengan langkah di atas, `OrderSearchBar` juga memanggil
+   `orderService.searchSuggestions(term)` (endpoint baru
+   `GET /orders/search-suggestions?q=...`) setiap kata kunci (yang sudah
+   di-debounce) berubah.
+2. Backend (`orderRepository.searchSuggestions`) menjalankan query ringan —
+   hanya `id, created_at, status, users(nama_lengkap)` + `limit(8)` — supaya
+   dropdown tetap cepat walau jumlah pesanan sangat banyak (tidak mengambil
+   seluruh relasi `order_items`/`payments`/dll seperti query tabel utama).
+3. Dropdown menampilkan per baris: Order ID (`#XXXXXXXX`), Nama User,
+   Tanggal Pemesanan, dan badge Status (pakai komponen `OrderStatusBadge`
+   yang sudah ada, supaya warna/label status selalu konsisten dengan
+   tabel).
+4. Admin bisa terus mengetik hingga Order ID lengkap, **atau** klik salah
+   satu saran — begitu dipilih, input diisi otomatis dan tabel pesanan
+   langsung difilter ke transaksi tersebut.
+5. Dropdown otomatis tertutup saat: saran dipilih, input dikosongkan,
+   tombol Escape ditekan, atau Admin klik di luar area Search Bar.
+
+## Optimasi Performa
+
+- **Server-side filtering**, bukan filter di frontend — baik untuk daftar
+  pesanan (`GET /orders?search=...`) maupun autocomplete
+  (`GET /orders/search-suggestions?q=...`), supaya performa tidak menurun
+  seiring bertambahnya jumlah pesanan.
+- **Index GIN trigram** (`pg_trgm`) pada `orders (id::text)` — index
+  b-tree bawaan primary key `id` tidak bisa mempercepat pencarian
+  `ILIKE '%...%'` (partial match di tengah string); index trigram inilah
+  yang membuatnya tetap cepat.
+- **Query autocomplete ringan** — hanya mengambil kolom yang benar-benar
+  dibutuhkan dropdown (bukan relasi lengkap seperti `order_items`,
+  `payments`, `product_variants`, dst) dan dibatasi `limit(8)`.
+- **Debounce 300ms** pada input, mengurangi jumlah request yang dikirim
+  saat Admin mengetik cepat.
+- Pencarian tetap memakai filter Tanggal/Bulan/Tahun/Status yang sudah
+  ada di level query database (bukan digabung manual di frontend), jadi
+  kombinasi filter tidak menambah beban di sisi client.
+
+## Hasil Pengujian
+
+| # | Skenario | Hasil |
 |---|---|---|
-| `frontend/services/stockService.ts` | Baru | Client untuk `GET /stock/low-stock`, `GET /stock/settings`, `PUT /stock/settings`. |
-| `frontend/components/shared/StockStatusBadge.tsx` | Baru | Komponen badge status stok (`Stok Aman` / `Stok Menipis` / `Stok Habis`) + helper `getStockStatus(stok, minimumStock)`. |
-| `frontend/features/admin/components/LowStockWidget.tsx` | Baru | Widget "Stok Menipis" untuk Dashboard Admin. |
-| `frontend/features/admin/components/StockSettingsForm.tsx` | Baru | Form "Batas Minimum Stok" untuk halaman Pengaturan. |
-| `frontend/features/admin/components/DashboardView.tsx` | Diubah | Menyisipkan `LowStockWidget` di samping Grafik Penjualan. |
-| `frontend/features/admin/components/ProductManagementView.tsx` | Diubah | Tambah kolom "Stok" (badge status), filter "Tampilkan hanya stok menipis", dan pembacaan `?edit=productId` dari URL untuk auto-buka modal Edit Produk. |
-| `frontend/features/admin/components/VariantManager.tsx` | Diubah | Tambah badge status stok di setiap baris varian pada form Produk. |
-| `frontend/app/admin/pengaturan/page.tsx` | Diubah | Menyisipkan `StockSettingsForm` (field lain di halaman ini tetap dummy seperti sebelumnya, tidak diubah). |
+| 1 | Admin mengetik Order ID lengkap (UUID penuh atau `#XXXXXXXX` yang tampil di tabel) | Lulus — Pesanan langsung ditemukan (exact match lewat `ILIKE`). |
+| 2 | Admin mengetik sebagian Order ID (di awal, tengah, atau akhir string) | Lulus — Pesanan tetap ditemukan (partial match `%keyword%`, case-insensitive). |
+| 3 | Autocomplete muncul saat Admin mulai mengetik | Lulus — Dropdown menampilkan daftar Order ID yang cocok (Order ID, Nama User, Tanggal, Status) dari `GET /orders/search-suggestions`. |
+| 4 | Admin memilih salah satu Order ID dari autocomplete | Lulus — Input terisi otomatis, dropdown tertutup, tabel pesanan langsung difilter ke transaksi yang dipilih. |
+| 5 | Search bersamaan dengan filter Status | Lulus — `applyFilters` menerapkan `status` dan `search` sekaligus pada query yang sama. |
+| 6 | Search bersamaan dengan filter Tanggal/Bulan/Tahun | Lulus — `applyFilters` menerapkan rentang tanggal dan `search` sekaligus tanpa saling menimpa. |
+| 7 | Order ID tidak ditemukan | Lulus — Menampilkan empty state "Tidak ada pesanan yang sesuai dengan pencarian." tanpa error. |
+| 8 | Performa saat data banyak | Lulus — Filtering di level database (bukan frontend) + index trigram + query autocomplete ringan dengan `limit(8)` + debounce 300ms pada input. |
 
-## Cara Kerja Sistem Notifikasi Stok
-
-1. **Tidak ada tabel notifikasi baru yang di-fan-out per baris.** Daftar stok
-   menipis dihitung *real-time* langsung dari `product_variants.stok` setiap
-   kali Admin membuka Dashboard atau Manajemen Produk (`GET /stock/low-stock`),
-   sehingga selalu akurat dan otomatis ikut berubah begitu stok atau Batas
-   Minimum Stok diperbarui — tidak perlu proses background/cron terpisah.
-2. Backend (`stockService.getLowStockReport`) mengambil seluruh varian dengan
-   `stok <= batas minimum`, mengecualikan produk yang sudah dinonaktifkan
-   (`is_active = false`), lalu mengelompokkannya per produk. Setiap varian
-   diberi status:
-   - `stok = 0` → **Stok Habis**
-   - `0 < stok <= batas minimum` → **Stok Menipis**
-   - `stok > batas minimum` → **Stok Aman**
-3. **Widget "Stok Menipis" di Dashboard Admin** menampilkan Nama Produk,
-   Warna, Ukuran, Sisa Stok, dan badge "Segera Restock" untuk setiap varian
-   yang stoknya menipis/habis. Klik salah satu item mengarahkan ke
-   `/admin/produk?edit=<productId>` — begitu daftar produk termuat,
-   `ProductManagementView` membaca parameter `edit` tersebut, membuka modal
-   Edit Produk untuk produk terkait, lalu membersihkan parameter dari URL.
-4. **Halaman Manajemen Produk** (halaman yang mengelola stok produk & varian)
-   menambahkan:
-   - Kolom **Stok** pada tabel produk — menampilkan badge status stok
-     terburuk di antara seluruh varian produk tersebut.
-   - Filter **"Tampilkan hanya stok menipis"** (checkbox) — bisa dipakai
-     bersamaan dengan Search dan Filter Kategori yang sudah ada (semuanya
-     AND, bukan OR). Saat aktif, hanya produk dengan minimal satu varian
-     berstatus Stok Menipis/Stok Habis yang ditampilkan.
-   - Badge status stok per varian juga ditambahkan di form Edit Produk
-     (`VariantManager`), di sebelah nilai stok masing-masing varian.
-
-## Cara Kerja Batas Minimum Stok
-
-1. Disimpan di tabel `stock_settings` (baris tunggal, `id = 1`), default
-   **15**. Admin dapat mengubahnya kapan saja lewat halaman **Pengaturan**
-   (bagian baru "Batas Minimum Stok", di bawah field pengaturan toko yang
-   sudah ada/dummy — field lain tidak diubah).
-2. Backend memvalidasi nilai baru harus berupa angka bulat ≥ 1
-   (`PUT /stock/settings`, body `{ minimumStock }`).
-3. Nilai ini adalah **satu sumber kebenaran** yang dipakai di seluruh sistem:
-   widget Stok Menipis di Dashboard, filter & kolom Stok di Manajemen Produk,
-   serta badge status stok di tabel varian form Produk — begitu Admin
-   menyimpan nilai baru, seluruh pengecekan stok (di semua tempat tersebut)
-   otomatis mengikuti nilai terbaru pada request berikutnya (masing-masing
-   komponen mengambil nilai ini lewat `GET /stock/settings` saat dimuat).
-
-## Hasil Pengujian Seluruh Skenario
-
-1. **Stok varian menjadi 15 (= batas minimum default).**
-   ✅ `statusForStock(15, 15)` menghasilkan `"menipis"` (kondisi `stok <=
-   minimumStock`), sehingga varian tersebut masuk ke `GET /stock/low-stock`
-   dan muncul di daftar stok menipis pada widget Dashboard maupun filter
-   Manajemen Produk.
-2. **Stok menjadi 8.**
-   ✅ Tetap menghasilkan status `"menipis"` (8 ≤ 15), tetap muncul di widget
-   Dashboard maupun tabel Manajemen Produk.
-3. **Stok menjadi 0.**
-   ✅ `statusForStock(0, 15)` menghasilkan `"habis"` — badge berubah menjadi
-   "Stok Habis" (merah) di tabel produk, tabel varian, dan tetap termasuk
-   dalam daftar `GET /stock/low-stock` (dengan status `habis`).
-4. **Admin mengubah batas minimum menjadi 20.**
-   ✅ `PUT /stock/settings` memperbarui baris tunggal di `stock_settings`.
-   Karena seluruh endpoint (`getLowStockReport`, `getMinimumStock`) selalu
-   membaca nilai terbaru dari tabel ini tanpa cache, seluruh pengecekan stok
-   di Dashboard, Manajemen Produk, dan form Varian otomatis mengikuti nilai
-   20 pada permintaan berikutnya — varian dengan stok 16–20 yang sebelumnya
-   "Stok Aman" akan berubah menjadi "Stok Menipis".
-5. **Klik salah satu notifikasi pada widget Stok Menipis.**
-   ✅ `onClick` pada item widget memanggil `router.push
-   ("/admin/produk?edit=<productId>")`. Di halaman Manajemen Produk,
-   `useEffect` membaca parameter `edit` setelah daftar produk termuat,
-   mencocokkan `productId`, lalu memanggil `setEditingProduct` +
-   `setFormOpen(true)` sehingga modal Edit Produk untuk produk tersebut
-   langsung terbuka, dan parameter `edit` dibersihkan dari URL.
+Catatan tambahan yang juga diperiksa:
+- Tombol "Reset Filter" ikut mengosongkan Search Bar (lewat `resetSignal`),
+  konsisten dengan filter Tanggal/Bulan/Tahun/Status lainnya.
+- Dropdown tertutup dengan benar saat: item dipilih, input dikosongkan,
+  tombol Escape, dan klik di luar Search Bar.
+- `npx tsc --noEmit` pada seluruh project frontend → 0 error.
+- `eslint` (konfigurasi `next/core-web-vitals` + `next/typescript`) pada
+  seluruh file yang diubah → 0 error.
+- Seluruh file backend yang diubah lolos `node --check` (tidak ada syntax
+  error).
