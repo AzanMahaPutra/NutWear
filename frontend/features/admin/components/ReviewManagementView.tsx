@@ -6,6 +6,7 @@ import { DataTable } from "@/components/shared/DataTable";
 import { RowActions } from "@/components/shared/RowActions";
 import { RatingStars } from "@/components/ui/RatingStars";
 import { reviewService } from "@/services/reviewService";
+import { productService } from "@/services/productService";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { formatDate } from "@/utils/formatDate";
@@ -33,26 +34,56 @@ const FILTERS: { value: RatingFilter; label: string }[] = [
   { value: 1, label: "Bintang 1" },
 ];
 
+// UPDATE — Filter Review berdasarkan Produk. "all" berarti tidak difilter
+// berdasarkan produk (menampilkan review dari seluruh produk seperti semula).
+const ALL_PRODUCTS = "all";
+
+interface ProductOption {
+  id: string;
+  namaProduk: string;
+}
+
 /**
  * View Manajemen Review Admin — fetch dari Review API sungguhan (GET /reviews, admin only),
  * menampilkan produk yang direview (thumbnail, nama, SKU) + filter berdasarkan rating,
  * moderasi (hapus) lewat DELETE /reviews/:id.
+ *
+ * UPDATE — Filter berdasarkan Produk: dropdown "Produk" diisi dari seluruh produk
+ * di database (Product API, GET /products). Filter Produk & filter Rating dikirim
+ * bersamaan sebagai query string ke GET /reviews dan difilter di backend/database
+ * (bukan di frontend) supaya performa tetap baik walau jumlah review sudah banyak.
  */
 export function ReviewManagementView() {
   const [reviews, setReviews] = useState<AdminReviewItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>("all");
+  const [productFilter, setProductFilter] = useState<string>(ALL_PRODUCTS);
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const showToast = useToastStore((s) => s.showToast);
+
+  // UPDATE — Ambil seluruh produk (pageSize besar) sekali di awal untuk mengisi
+  // dropdown "Produk". Ini hanya untuk isi dropdown, tidak dipakai memfilter review
+  // di frontend — filter review tetap dilakukan lewat query ke backend di bawah.
+  useEffect(() => {
+    productService
+      .getAll({ pageSize: 1000 })
+      .then(({ items }) => setProductOptions(items.map((p) => ({ id: p.id, namaProduk: p.namaProduk }))))
+      .catch((err) => showToast(getApiErrorMessage(err, "Gagal memuat daftar produk"), "error"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     setIsLoading(true);
     reviewService
-      .getAll({ rating: ratingFilter === "all" ? undefined : ratingFilter })
+      .getAll({
+        rating: ratingFilter === "all" ? undefined : ratingFilter,
+        productId: productFilter === ALL_PRODUCTS ? undefined : productFilter,
+      })
       .then(setReviews)
       .catch((err) => showToast(getApiErrorMessage(err, "Gagal memuat ulasan"), "error"))
       .finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ratingFilter]);
+  }, [ratingFilter, productFilter]);
 
   async function handleDelete(id: string) {
     try {
@@ -66,6 +97,22 @@ export function ReviewManagementView() {
 
   return (
     <div className="p-6">
+      <div className="mb-4">
+        <label className="mb-1.5 block text-xs font-semibold text-neutral-600">Produk</label>
+        <select
+          value={productFilter}
+          onChange={(e) => setProductFilter(e.target.value)}
+          className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-neutral-900 sm:w-80"
+        >
+          <option value={ALL_PRODUCTS}>Semua Produk</option>
+          {productOptions.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.namaProduk}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <button
