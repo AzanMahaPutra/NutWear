@@ -33,6 +33,8 @@ export const ROUTES = {
     heroBanner: "/admin/hero-banner",
     pesanan: "/admin/pesanan",
     pelanggan: "/admin/pelanggan",
+    // UPDATE — Pengajuan Unban: halaman Admin "Permohonan Unban".
+    permohonanUnban: "/admin/permohonan-unban",
     review: "/admin/review",
     pengaturan: "/admin/pengaturan",
   },

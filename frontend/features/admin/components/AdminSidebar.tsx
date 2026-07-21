@@ -10,6 +10,7 @@ import {
   GalleryHorizontal,
   ShoppingBag,
   Users,
+  UserX,
   Star,
   Settings,
 } from "lucide-react";
@@ -24,7 +25,9 @@ const ADMIN_NAV = [
   { label: "Banner Produk", href: ROUTES.admin.banner, icon: ImageIcon },
   { label: "Hero Banner", href: ROUTES.admin.heroBanner, icon: GalleryHorizontal },
   { label: "Pesanan", href: ROUTES.admin.pesanan, icon: ShoppingBag },
-  { label: "Pelanggan", href: ROUTES.admin.pelanggan, icon: Users },
+  { label: "Manajemen User", href: ROUTES.admin.pelanggan, icon: Users },
+  // UPDATE — Pengajuan Unban: menu baru khusus permohonan pembukaan blokir akun.
+  { label: "Permohonan Unban", href: ROUTES.admin.permohonanUnban, icon: UserX },
   { label: "Review", href: ROUTES.admin.review, icon: Star },
   { label: "Pengaturan", href: ROUTES.admin.pengaturan, icon: Settings },
 ];

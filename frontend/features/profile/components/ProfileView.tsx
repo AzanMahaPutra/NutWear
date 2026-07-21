@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, LogOut } from "lucide-react";
+import { MapPin, LogOut, ShieldAlert } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useAddressStore } from "@/stores/addressStore";
 import { useToastStore } from "@/stores/toastStore";
 import { Modal } from "@/components/ui/Modal";
 import { AddressForm } from "@/features/profile/components/AddressForm";
 import { authService } from "@/services/authService";
+import { unbanRequestService, UnbanRequest } from "@/services/unbanRequestService";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { ROUTES } from "@/constants/routes";
 import { ProductCardSkeleton } from "@/components/ui/Skeleton";
@@ -25,10 +26,47 @@ export function ProfileView() {
   const showToast = useToastStore((s) => s.showToast);
   const [addAddressOpen, setAddAddressOpen] = useState(false);
 
+  // UPDATE — Pengajuan Unban: state untuk modal "Ajukan Pembukaan Blokir Akun",
+  // hanya relevan/ditampilkan kalau akun sedang berstatus "banned".
+  const [unbanModalOpen, setUnbanModalOpen] = useState(false);
+  const [unbanReason, setUnbanReason] = useState("");
+  const [isSubmittingUnban, setIsSubmittingUnban] = useState(false);
+  const [latestUnbanRequest, setLatestUnbanRequest] = useState<UnbanRequest | null>(null);
+
   useEffect(() => {
     fetchAddresses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (user?.status !== "banned") return;
+    unbanRequestService
+      .getMyLatest()
+      .then(setLatestUnbanRequest)
+      .catch(() => setLatestUnbanRequest(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.status]);
+
+  const hasPendingUnbanRequest = latestUnbanRequest?.status === "menunggu";
+
+  async function handleSubmitUnbanRequest() {
+    if (!unbanReason.trim()) {
+      showToast("Alasan permohonan unban wajib diisi", "error");
+      return;
+    }
+    setIsSubmittingUnban(true);
+    try {
+      const created = await unbanRequestService.submit(unbanReason.trim());
+      setLatestUnbanRequest(created);
+      setUnbanModalOpen(false);
+      setUnbanReason("");
+      showToast("Permohonan unban berhasil dikirim");
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Gagal mengirim permohonan unban"), "error");
+    } finally {
+      setIsSubmittingUnban(false);
+    }
+  }
 
   async function handleLogout() {
     try {
@@ -85,6 +123,57 @@ export function ProfileView() {
         <span className="text-sm text-neutral-600">{user.noHp}</span>
       </div>
 
+      {/* UPDATE — Banned User & Pengajuan Unban: banner ini hanya tampil kalau akun
+          sedang berstatus "banned". Selagi dibanned, tombol Checkout/Review/Wishlist/
+          Keranjang tetap dikirim ke backend seperti biasa dan akan ditolak dengan pesan
+          alasan banned (lihat middlewares/authMiddleware.js -> blockIfBanned). */}
+      {user.status === "banned" && (
+        <div className="mb-8 rounded-lg border border-red-200 bg-red-50 px-4 py-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+            <div className="flex-1 text-sm">
+              <p className="font-semibold text-red-700">Akun Anda sedang dibanned</p>
+              {user.bannedReason && (
+                <p className="mt-1 text-red-600">
+                  Alasan: <span className="font-medium">{user.bannedReason}</span>
+                </p>
+              )}
+              <p className="mt-1 text-red-600">
+                Anda masih bisa login dan melihat produk/riwayat pesanan, tetapi tidak dapat checkout, memberi
+                ulasan, atau menambah wishlist/keranjang sampai permohonan unban Anda disetujui Admin.
+              </p>
+
+              {hasPendingUnbanRequest ? (
+                <p className="mt-3 text-xs font-semibold text-red-500">
+                  Permohonan unban Anda sedang menunggu diproses Admin.
+                </p>
+              ) : latestUnbanRequest?.status === "ditolak" ? (
+                <div className="mt-3">
+                  <p className="mb-2 text-xs font-semibold text-red-500">
+                    Permohonan unban sebelumnya ditolak. Anda dapat mengajukan permohonan baru.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setUnbanModalOpen(true)}
+                    className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                  >
+                    Ajukan Pembukaan Blokir Akun
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setUnbanModalOpen(true)}
+                  className="mt-3 rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                >
+                  Ajukan Pembukaan Blokir Akun
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-bold text-neutral-900">Alamat</h2>
         <button
@@ -138,6 +227,47 @@ export function ProfileView() {
 
       <Modal open={addAddressOpen} onClose={() => setAddAddressOpen(false)} title="Tambah Alamat">
         <AddressForm onSuccess={() => setAddAddressOpen(false)} />
+      </Modal>
+
+      {/* UPDATE — Pengajuan Unban: form permohonan hanya bisa diakses lewat banner
+          di atas, yang hanya tampil untuk akun berstatus "banned" (lihat kondisi
+          user.status === "banned" di atas). */}
+      <Modal
+        open={unbanModalOpen}
+        onClose={() => !isSubmittingUnban && setUnbanModalOpen(false)}
+        title="Ajukan Pembukaan Blokir Akun"
+      >
+        <p className="mb-3 text-sm text-neutral-600">
+          Jelaskan alasan Anda mengajukan pembukaan blokir akun. Admin akan meninjau permohonan ini.
+        </p>
+        <label className="mb-1.5 block text-xs font-semibold text-neutral-600">
+          Alasan Permohonan Unban <span className="text-red-500">*</span>
+        </label>
+        <textarea
+          value={unbanReason}
+          onChange={(e) => setUnbanReason(e.target.value)}
+          rows={4}
+          placeholder="Contoh: Saya sudah memahami kesalahan saya dan berjanji tidak akan mengulanginya..."
+          className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-neutral-900"
+        />
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setUnbanModalOpen(false)}
+            disabled={isSubmittingUnban}
+            className="rounded-full border border-neutral-200 px-5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmitUnbanRequest}
+            disabled={isSubmittingUnban}
+            className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {isSubmittingUnban ? "Mengirim..." : "Kirim Permohonan"}
+          </button>
+        </div>
       </Modal>
     </div>
   );

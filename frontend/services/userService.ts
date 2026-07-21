@@ -1,13 +1,20 @@
 import { apiClient } from "@/lib/apiClient";
 import { ApiResponse } from "@/lib/apiTypes";
-import { User, UserAddress } from "@/types/user";
+import { User, UserAccountStatus, UserAddress } from "@/types/user";
 
+// UPDATE — Manajemen User: data pelanggan sekarang menyertakan Status Akun,
+// Total Pesanan, dan Total Review (lihat CustomerManagementView).
 export interface AdminCustomer {
   id: string;
   namaLengkap: string;
   email: string;
   noHp: string;
   joinedAt: string;
+  status: UserAccountStatus;
+  bannedReason?: string | null;
+  bannedAt?: string | null;
+  orderCount: number;
+  reviewCount: number;
 }
 
 /**
@@ -51,6 +58,12 @@ export const userService = {
   // --- Admin ---
   async getAllCustomers() {
     const { data } = await apiClient.get<ApiResponse<AdminCustomer[]>>("/users");
+    return data.data;
+  },
+
+  // UPDATE — Banned User: Admin melakukan banned terhadap satu user.
+  async banUser(id: string, reason: string) {
+    const { data } = await apiClient.patch<ApiResponse<User>>(`/users/${id}/ban`, { reason });
     return data.data;
   },
 };

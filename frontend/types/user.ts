@@ -3,12 +3,17 @@
 // dikembalikan API sungguhan (mis. wishlist tidak menyimpan varian warna/ukuran,
 // hanya referensi ke produk).
 
+// UPDATE — Banned User & Pengajuan Unban: status akun customer.
+export type UserAccountStatus = "aktif" | "banned";
+
 export interface User {
   id: string;
   namaLengkap: string;
   email: string;
   noHp: string;
   role: "customer" | "admin";
+  status: UserAccountStatus;
+  bannedReason?: string | null;
 }
 
 export interface UserAddress {
