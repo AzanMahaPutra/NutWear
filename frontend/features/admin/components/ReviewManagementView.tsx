@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Star } from "lucide-react";
+import { Star, Eye, EyeOff } from "lucide-react";
 import { DataTable } from "@/components/shared/DataTable";
 import { RowActions } from "@/components/shared/RowActions";
 import { RatingStars } from "@/components/ui/RatingStars";
-import { reviewService } from "@/services/reviewService";
+import { reviewService, ReviewStatus } from "@/services/reviewService";
 import { productService } from "@/services/productService";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
@@ -21,7 +21,20 @@ interface AdminReviewItem {
   rating: number;
   comment: string;
   createdAt: string;
+  status: ReviewStatus;
 }
+
+// UPDATE — Moderasi Review: badge status di tabel Review Admin supaya Admin
+// tahu review mana yang sedang aktif (tampil ke publik) dan mana yang disembunyikan.
+const STATUS_LABEL: Record<ReviewStatus, string> = {
+  ditampilkan: "Ditampilkan",
+  disembunyikan: "Disembunyikan",
+};
+
+const STATUS_COLOR: Record<ReviewStatus, string> = {
+  ditampilkan: "bg-emerald-50 text-emerald-700",
+  disembunyikan: "bg-neutral-100 text-neutral-500",
+};
 
 type RatingFilter = "all" | 5 | 4 | 3 | 2 | 1;
 
@@ -95,6 +108,20 @@ export function ReviewManagementView() {
     }
   }
 
+  // UPDATE — Moderasi Review: sembunyikan/tampilkan review tanpa menghapusnya
+  // dari database. Status baru langsung dipakai untuk update state lokal
+  // supaya badge & tombol di tabel langsung berubah tanpa perlu refetch.
+  async function handleToggleStatus(review: AdminReviewItem) {
+    const nextStatus: ReviewStatus = review.status === "ditampilkan" ? "disembunyikan" : "ditampilkan";
+    try {
+      const updated = await reviewService.updateStatus(review.id, nextStatus);
+      setReviews((prev) => prev.map((r) => (r.id === review.id ? { ...r, status: updated.status } : r)));
+      showToast(updated.status === "disembunyikan" ? "Ulasan disembunyikan" : "Ulasan ditampilkan kembali");
+    } catch (err) {
+      showToast(getApiErrorMessage(err), "error");
+    }
+  }
+
   return (
     <div className="p-6">
       <div className="mb-4">
@@ -157,12 +184,48 @@ export function ReviewManagementView() {
           },
           { key: "user", header: "Pengguna", render: (r) => r.userName },
           { key: "rating", header: "Rating", render: (r) => <RatingStars rating={r.rating} /> },
-          { key: "komentar", header: "Komentar", render: (r) => <span className="line-clamp-2 max-w-xs">{r.comment}</span> },
+          {
+            key: "komentar",
+            header: "Komentar",
+            render: (r) => (
+              <span className={cn("line-clamp-2 max-w-xs", r.status === "disembunyikan" && "text-neutral-400")}>
+                {r.comment}
+              </span>
+            ),
+          },
           { key: "tanggal", header: "Tanggal", render: (r) => formatDate(r.createdAt) },
+          {
+            key: "status",
+            header: "Status",
+            render: (r) => (
+              <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", STATUS_COLOR[r.status])}>
+                {STATUS_LABEL[r.status]}
+              </span>
+            ),
+          },
           {
             key: "aksi",
             header: "Aksi",
-            render: (r) => <RowActions onDelete={() => handleDelete(r.id)} />,
+            render: (r) => (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleToggleStatus(r)}
+                  className="flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-600 transition-colors hover:bg-neutral-100"
+                >
+                  {r.status === "disembunyikan" ? (
+                    <>
+                      <Eye className="h-3.5 w-3.5" /> Tampilkan Review
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="h-3.5 w-3.5" /> Sembunyikan Review
+                    </>
+                  )}
+                </button>
+                <RowActions onDelete={() => handleDelete(r.id)} />
+              </div>
+            ),
           },
         ]}
       />

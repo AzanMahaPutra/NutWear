@@ -10,6 +10,10 @@ export interface ReviewPurchaseInfo {
   quantity?: number | null;
 }
 
+// UPDATE — Moderasi Review: status "ditampilkan" (tampil ke publik) atau
+// "disembunyikan" (hanya terlihat di Review Admin).
+export type ReviewStatus = "ditampilkan" | "disembunyikan";
+
 interface ReviewApiItem {
   id: string;
   productId: string;
@@ -22,6 +26,7 @@ interface ReviewApiItem {
   createdAt: string;
   orderId?: string | null;
   purchaseInfo?: ReviewPurchaseInfo | null;
+  status: ReviewStatus;
 }
 
 interface ReviewSummary {
@@ -61,5 +66,12 @@ export const reviewService = {
 
   async remove(id: string) {
     await apiClient.delete(`/reviews/${id}`);
+  },
+
+  // UPDATE — Moderasi Review: Admin menyembunyikan/menampilkan review tanpa
+  // menghapusnya dari database.
+  async updateStatus(id: string, status: ReviewStatus) {
+    const { data } = await apiClient.patch<ApiResponse<ReviewApiItem>>(`/reviews/${id}/status`, { status });
+    return data.data;
   },
 };
