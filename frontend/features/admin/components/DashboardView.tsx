@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Package, Users, ShoppingBag, Wallet } from "lucide-react";
 import { StatCard } from "@/features/admin/components/StatCard";
+import { LowStockWidget } from "@/features/admin/components/LowStockWidget";
 import { DataTable } from "@/components/shared/DataTable";
 import { dashboardService, DashboardSummary } from "@/services/dashboardService";
 import { useToastStore } from "@/stores/toastStore";
@@ -56,7 +57,12 @@ export function DashboardView() {
         <StatCard label="Pendapatan" value={formatCurrency(summary.stats.pendapatan)} icon={Wallet} />
       </div>
 
-      <SalesChart data={summary.salesChart} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <SalesChart data={summary.salesChart} />
+        </div>
+        <LowStockWidget />
+      </div>
 
       <div>
         <h3 className="mb-3 text-base font-bold text-neutral-900">Produk Terlaris</h3>

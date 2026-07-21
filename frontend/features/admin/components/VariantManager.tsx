@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pencil, Trash2, Check, X, Wand2 } from "lucide-react";
 import { ProductVariant } from "@/types/product";
 import { productService } from "@/services/productService";
+import { stockService } from "@/services/stockService";
+import { getStockStatus, StockStatusBadge } from "@/components/shared/StockStatusBadge";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { AVAILABLE_SIZES } from "@/features/product/types/filter";
@@ -38,6 +40,19 @@ interface EditableFields {
  */
 export function VariantManager({ productId, initialVariants }: VariantManagerProps) {
   const [variants, setVariants] = useState(initialVariants);
+
+  // UPDATE — Notifikasi Stok Menipis untuk Admin: badge status stok per varian
+  // mengikuti Batas Minimum Stok yang berlaku (lihat Pengaturan Admin).
+  const [minimumStock, setMinimumStock] = useState(15);
+
+  useEffect(() => {
+    stockService
+      .getMinimumStock()
+      .then(setMinimumStock)
+      .catch(() => {
+        // Diamkan: badge tetap tampil dengan nilai default (15) kalau gagal fetch.
+      });
+  }, []);
 
   const [warna, setWarna] = useState("");
   const [skuPrefix, setSkuPrefix] = useState("");
@@ -206,6 +221,7 @@ export function VariantManager({ productId, initialVariants }: VariantManagerPro
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">Stok: {v.stok}</span>
+                      <StockStatusBadge status={getStockStatus(v.stok, minimumStock)} />
                       <button
                         type="button"
                         onClick={() => startEdit(v)}

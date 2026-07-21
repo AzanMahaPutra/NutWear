@@ -5,6 +5,7 @@ import { Plus, Search, X } from "lucide-react";
 import { DataTable } from "@/components/shared/DataTable";
 import { RowActions } from "@/components/shared/RowActions";
 import { StatusToggle } from "@/components/shared/StatusToggle";
+import { StockStatusBadge, getStockStatus } from "@/components/shared/StockStatusBadge";
 import { Modal } from "@/components/ui/Modal";
 import { ProductForm } from "@/features/admin/components/ProductForm";
 import { useAdminProductStore } from "@/stores/adminProductStore";
@@ -13,9 +14,24 @@ import { useToastStore } from "@/stores/toastStore";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { formatCurrency } from "@/utils/formatCurrency";
+import { stockService, StockStatus } from "@/services/stockService";
 import { Product } from "@/types/product";
 
 const ALL_CATEGORIES = "all";
+
+/**
+ * Status stok terburuk di antara seluruh varian sebuah produk (dipakai kolom
+ * "Stok" & filter "Tampilkan hanya stok menipis"). "habis" > "menipis" > "aman".
+ * Produk tanpa varian mengembalikan null (kolom menampilkan "-").
+ */
+function worstVariantStockStatus(product: Product, minimumStock: number): StockStatus | null {
+  if (!product.variants || product.variants.length === 0) return null;
+
+  const statuses = product.variants.map((v) => getStockStatus(v.stok, minimumStock));
+  if (statuses.includes("habis")) return "habis";
+  if (statuses.includes("menipis")) return "menipis";
+  return "aman";
+}
 
 /**
  * View Manajemen Produk Admin: tabel + modal tambah/edit (+ varian & upload gambar) + toggle status + hapus.
@@ -46,11 +62,43 @@ export function ProductManagementView() {
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [categoryFilter, setCategoryFilter] = useState<string>(ALL_CATEGORIES);
 
+  // UPDATE — Notifikasi Stok Menipis untuk Admin: filter "Tampilkan hanya
+  // stok menipis" + Batas Minimum Stok (dipakai kolom "Stok" & filter).
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [minimumStock, setMinimumStock] = useState(15);
+
   useEffect(() => {
     fetchProducts();
     fetchCategories();
+    stockService
+      .getMinimumStock()
+      .then(setMinimumStock)
+      .catch(() => {
+        // Diamkan: kolom Stok & filter tetap jalan dengan nilai default (15).
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // UPDATE — Notifikasi Stok Menipis untuk Admin: klik item pada widget "Stok
+  // Menipis" di Dashboard mengarahkan ke /admin/produk?edit=productId, di sini
+  // dibaca sekali produk sudah termuat supaya modal Edit Produk langsung terbuka.
+  useEffect(() => {
+    if (isLoading || products.length === 0) return;
+
+    const editId = new URLSearchParams(window.location.search).get("edit");
+    if (!editId) return;
+
+    const product = products.find((p) => p.id === editId);
+    if (product) {
+      setEditingProduct(product);
+      setFormOpen(true);
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("edit");
+    window.history.replaceState({}, "", url.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, products]);
 
   function openAdd() {
     setEditingProduct(undefined);
@@ -82,18 +130,25 @@ export function ProductManagementView() {
   function handleResetFilter() {
     setSearchInput("");
     setCategoryFilter(ALL_CATEGORIES);
+    setLowStockOnly(false);
   }
 
-  const isFilterActive = debouncedSearch.trim().length > 0 || categoryFilter !== ALL_CATEGORIES;
+  const isFilterActive = debouncedSearch.trim().length > 0 || categoryFilter !== ALL_CATEGORIES || lowStockOnly;
 
   // Pencarian mencakup Nama Produk, Slug, dan SKU varian — tidak case-sensitive.
-  // Filter Kategori bisa dipakai bersamaan dengan Search (keduanya AND, bukan OR).
+  // Filter Kategori & Filter Stok Menipis bisa dipakai bersamaan dengan Search
+  // (semuanya AND, bukan OR).
   const filteredProducts = useMemo(() => {
     const keyword = debouncedSearch.trim().toLowerCase();
 
     return products.filter((product) => {
       if (categoryFilter !== ALL_CATEGORIES && product.kategoriId !== categoryFilter) {
         return false;
+      }
+
+      if (lowStockOnly) {
+        const status = worstVariantStockStatus(product, minimumStock);
+        if (status !== "menipis" && status !== "habis") return false;
       }
 
       if (!keyword) return true;
@@ -104,7 +159,7 @@ export function ProductManagementView() {
 
       return matchesNama || matchesSlug || matchesSku;
     });
-  }, [products, debouncedSearch, categoryFilter]);
+  }, [products, debouncedSearch, categoryFilter, lowStockOnly, minimumStock]);
 
   const emptyTitle = isLoading
     ? "Memuat..."
@@ -140,6 +195,16 @@ export function ProductManagementView() {
             ))}
           </select>
 
+          <label className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm font-medium text-neutral-700 sm:w-auto">
+            <input
+              type="checkbox"
+              checked={lowStockOnly}
+              onChange={(e) => setLowStockOnly(e.target.checked)}
+              className="h-3.5 w-3.5 accent-neutral-900"
+            />
+            Tampilkan hanya stok menipis
+          </label>
+
           {isFilterActive && (
             <button
               type="button"
@@ -172,6 +237,14 @@ export function ProductManagementView() {
             render: (p) => categories.find((c) => c.id === p.kategoriId)?.namaKategori ?? "-",
           },
           { key: "harga", header: "Harga", render: (p) => formatCurrency(p.harga) },
+          {
+            key: "stok",
+            header: "Stok",
+            render: (p) => {
+              const status = worstVariantStockStatus(p, minimumStock);
+              return status ? <StockStatusBadge status={status} /> : "-";
+            },
+          },
           {
             key: "status",
             header: "Status",

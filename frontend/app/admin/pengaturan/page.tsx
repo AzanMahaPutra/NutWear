@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import { AdminTopbar } from "@/features/admin/components/AdminTopbar";
+import { StockSettingsForm } from "@/features/admin/components/StockSettingsForm";
 
 export const metadata: Metadata = { title: "Pengaturan" };
 
 /**
  * Halaman Pengaturan toko — dummy di Fase 1.
  * Akan disambungkan ke Admin Dashboard API (pengaturan umum) pada Fase 3.
+ *
+ * UPDATE — Notifikasi Stok Menipis untuk Admin: bagian "Batas Minimum Stok"
+ * sudah terhubung ke Stock API sungguhan (lihat StockSettingsForm), field
+ * lain di halaman ini masih dummy seperti sebelumnya.
  */
 export default function AdminPengaturanPage() {
   return (
@@ -27,6 +32,8 @@ export default function AdminPengaturanPage() {
         <button type="button" className="w-full rounded-full bg-neutral-900 py-3 text-sm font-semibold text-white">
           Simpan Pengaturan
         </button>
+
+        <StockSettingsForm />
       </div>
     </>
   );
