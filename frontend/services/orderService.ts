@@ -2,7 +2,10 @@ import { apiClient } from "@/lib/apiClient";
 import { ApiResponse } from "@/lib/apiTypes";
 import { Order, OrderCustomer, OrderItemReview, OrderShippingAddress, OrderStatus } from "@/types/user";
 
-interface OrderApiResponse {
+// UPDATE — Laporan Transaksi & Export Excel: diekspor (sebelumnya tidak) supaya
+// transactionReportService.ts bisa memakai bentuk response Order API yang SAMA PERSIS
+// dengan yang sudah dipakai di sini, bukan mendefinisikan ulang secara terpisah.
+export interface OrderApiResponse {
   id: string;
   userId: string;
   addressId: string;
@@ -71,7 +74,9 @@ function toSearchSuggestion(raw: OrderSearchSuggestionApiResponse): OrderSearchS
   };
 }
 
-function toOrder(raw: OrderApiResponse): Order {
+// UPDATE — Laporan Transaksi & Export Excel: diekspor (sebelumnya tidak) — lihat catatan
+// pada OrderApiResponse di atas.
+export function toOrder(raw: OrderApiResponse): Order {
   return {
     id: raw.id,
     userId: raw.userId,

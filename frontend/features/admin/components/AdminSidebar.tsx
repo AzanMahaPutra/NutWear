@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   GalleryHorizontal,
   ShoppingBag,
+  FileSpreadsheet,
   Users,
   UserX,
   Star,
@@ -25,6 +26,10 @@ const ADMIN_NAV = [
   { label: "Banner Produk", href: ROUTES.admin.banner, icon: ImageIcon },
   { label: "Hero Banner", href: ROUTES.admin.heroBanner, icon: GalleryHorizontal },
   { label: "Pesanan", href: ROUTES.admin.pesanan, icon: ShoppingBag },
+  // UPDATE — Laporan Transaksi & Export Excel: menu baru, khusus transaksi yang
+  // pembayarannya sudah berhasil (Sudah Dibayar/Settlement), ditempatkan tepat
+  // di bawah "Pesanan" karena sama-sama seputar data order.
+  { label: "Laporan Transaksi", href: ROUTES.admin.laporanTransaksi, icon: FileSpreadsheet },
   { label: "Manajemen User", href: ROUTES.admin.pelanggan, icon: Users },
   // UPDATE — Pengajuan Unban: menu baru khusus permohonan pembukaan blokir akun.
   { label: "Permohonan Unban", href: ROUTES.admin.permohonanUnban, icon: UserX },

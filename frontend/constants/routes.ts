@@ -32,6 +32,9 @@ export const ROUTES = {
     banner: "/admin/banner",
     heroBanner: "/admin/hero-banner",
     pesanan: "/admin/pesanan",
+    // UPDATE — Laporan Transaksi & Export Excel: halaman baru khusus transaksi yang
+    // sudah berhasil dibayar (berbeda dari halaman Pesanan di atas).
+    laporanTransaksi: "/admin/laporan-transaksi",
     pelanggan: "/admin/pelanggan",
     // UPDATE — Pengajuan Unban: halaman Admin "Permohonan Unban".
     permohonanUnban: "/admin/permohonan-unban",
