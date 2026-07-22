@@ -8,6 +8,7 @@ import { OrderDetailView } from "@/features/admin/components/OrderDetailView";
 import { OrderSearchBar } from "@/features/admin/components/OrderSearchBar";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { YearPicker } from "@/components/ui/YearPicker";
 import { orderService, OrderFilterParams } from "@/services/orderService";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
@@ -15,9 +16,6 @@ import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 import { ORDER_STATUS_LABEL, MONTH_OPTIONS } from "@/constants/order";
 import { Order, OrderStatus } from "@/types/user";
-
-const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => String(CURRENT_YEAR - 4 + i));
 
 /**
  * View Manajemen Pesanan Admin — fetch dari Order API sungguhan (GET /orders) dengan
@@ -160,22 +158,7 @@ export function OrderManagementView() {
             </select>
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-500">Tahun</label>
-            <select
-              value={yearFilter}
-              onChange={(e) => setYearFilter(e.target.value)}
-              disabled={Boolean(dateFilter)}
-              className="rounded-md border border-neutral-200 px-3 py-2 text-sm disabled:bg-neutral-50 disabled:text-neutral-400"
-            >
-              <option value="">Semua Tahun</option>
-              {YEAR_OPTIONS.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
+          <YearPicker value={yearFilter} onChange={setYearFilter} disabled={Boolean(dateFilter)} />
 
           <div>
             <label className="mb-1 block text-xs font-medium text-neutral-500">Status Pesanan</label>
