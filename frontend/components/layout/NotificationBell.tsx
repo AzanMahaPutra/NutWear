@@ -2,23 +2,35 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Package, Sparkles, Tag, CheckCheck } from "lucide-react";
+import { Bell, Package, Sparkles, Tag, CheckCheck, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { formatNotificationTime } from "@/utils/formatDate";
 import { AppNotification, NotificationType } from "@/types/user";
+import { NotificationDetailModal } from "@/components/layout/NotificationDetailModal";
 
 const TYPE_ICON: Record<NotificationType, typeof Package> = {
   order_status: Package,
   new_arrival: Sparkles,
   promo: Tag,
+  // UPDATE — Notifikasi Banned User: ikon khusus (bukan lonceng biasa) supaya
+  // user langsung menyadari notifikasi ini penting/berkaitan dengan keamanan akun.
+  account_warning: AlertTriangle,
+  account_success: CheckCircle2,
 };
 
 const TYPE_ICON_STYLE: Record<NotificationType, string> = {
   order_status: "bg-indigo-100 text-indigo-600",
   new_arrival: "bg-emerald-100 text-emerald-600",
   promo: "bg-red-100 text-red-600",
+  account_warning: "bg-red-100 text-red-600",
+  account_success: "bg-green-100 text-green-600",
 };
+
+/** Kategori yang memakai identitas visual "penting" (badge & border merah tipis
+ * pada baris notifikasi), bukan hanya ikon — sesuai permintaan agar notifikasi
+ * keamanan akun langsung terlihat berbeda dari notifikasi biasa. */
+const IMPORTANT_TYPES: NotificationType[] = ["account_warning"];
 
 /**
  * Icon Notifikasi (Bell) di Navbar User — Update 1: Sistem Notifikasi User.
@@ -38,6 +50,11 @@ export function NotificationBell() {
   const markAsRead = useNotificationStore((s) => s.markAsRead);
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
 
+  // UPDATE — Notifikasi Banned User: notifikasi kategori account_warning/
+  // account_success membuka modal detail (ikon besar + alasan/tanggal + tombol
+  // Ajukan Permohonan Unban) alih-alih langsung pindah halaman seperti kategori lain.
+  const [detailNotification, setDetailNotification] = useState<AppNotification | null>(null);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
@@ -55,10 +72,15 @@ export function NotificationBell() {
   }
 
   async function handleItemClick(notification: AppNotification) {
-    setOpen(false);
     if (!notification.isRead) {
       await markAsRead(notification.id);
     }
+    if (notification.type === "account_warning" || notification.type === "account_success") {
+      setOpen(false);
+      setDetailNotification(notification);
+      return;
+    }
+    setOpen(false);
     if (notification.link) router.push(notification.link);
   }
 
@@ -102,14 +124,16 @@ export function NotificationBell() {
             ) : (
               items.map((notification) => {
                 const Icon = TYPE_ICON[notification.type];
+                const isImportant = IMPORTANT_TYPES.includes(notification.type);
                 return (
                   <button
                     key={notification.id}
                     type="button"
                     onClick={() => handleItemClick(notification)}
                     className={cn(
-                      "flex w-full items-start gap-3 border-b border-neutral-50 px-4 py-3 text-left last:border-0 hover:bg-neutral-50",
-                      !notification.isRead && "bg-neutral-50/80"
+                      "flex w-full items-start gap-3 border-b border-l-2 border-neutral-50 border-l-transparent px-4 py-3 text-left last:border-b-0 hover:bg-neutral-50",
+                      !notification.isRead && "bg-neutral-50/80",
+                      isImportant && "border-l-red-500 bg-red-50/40 hover:bg-red-50"
                     )}
                   >
                     <span
@@ -130,6 +154,11 @@ export function NotificationBell() {
                         >
                           {notification.title}
                         </span>
+                        {isImportant && (
+                          <span className="shrink-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                            Penting
+                          </span>
+                        )}
                         {!notification.isRead && <span className="h-2 w-2 shrink-0 rounded-full bg-red-600" />}
                       </span>
                       <span className="mt-0.5 block text-xs text-neutral-600 line-clamp-2">{notification.message}</span>
@@ -144,6 +173,11 @@ export function NotificationBell() {
           </div>
         </div>
       )}
+
+      <NotificationDetailModal
+        notification={detailNotification}
+        onClose={() => setDetailNotification(null)}
+      />
     </div>
   );
 }

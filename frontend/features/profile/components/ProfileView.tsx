@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MapPin, LogOut, ShieldAlert } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useAddressStore } from "@/stores/addressStore";
@@ -20,6 +20,7 @@ import { ProductCardSkeleton } from "@/components/ui/Skeleton";
  */
 export function ProfileView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const { addresses, isLoading, fetchAddresses, removeAddress } = useAddressStore();
@@ -48,6 +49,19 @@ export function ProfileView() {
   }, [user?.status]);
 
   const hasPendingUnbanRequest = latestUnbanRequest?.status === "menunggu";
+
+  // UPDATE — Notifikasi Banned User: tombol "Ajukan Permohonan Unban" pada
+  // detail notifikasi (NotificationDetailModal) mengarahkan ke sini dengan
+  // query "?unban=1" supaya form permohonan unban yang sudah ada langsung
+  // terbuka, tanpa user perlu mencari tombolnya sendiri di banner atas.
+  useEffect(() => {
+    if (searchParams.get("unban") !== "1") return;
+    if (user?.status !== "banned") return;
+    if (hasPendingUnbanRequest) return;
+    setUnbanModalOpen(true);
+    router.replace(ROUTES.profile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, user?.status, hasPendingUnbanRequest]);
 
   async function handleSubmitUnbanRequest() {
     if (!unbanReason.trim()) {

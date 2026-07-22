@@ -128,7 +128,11 @@ export interface OrderPayment {
   paidAt?: string | null;
 }
 
-export type NotificationType = "order_status" | "new_arrival" | "promo";
+// UPDATE — Notifikasi Banned User: dua kategori baru untuk notifikasi terkait
+// keamanan akun. "account_warning" dipakai untuk Akun Dibanned & Permohonan
+// Unban Ditolak (ikon Segitiga Merah), "account_success" untuk Permohonan
+// Unban Disetujui (ikon Centang Hijau). Lihat NotificationBell.tsx.
+export type NotificationType = "order_status" | "new_arrival" | "promo" | "account_warning" | "account_success";
 
 export interface AppNotification {
   id: string;
