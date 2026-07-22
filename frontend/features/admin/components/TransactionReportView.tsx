@@ -17,24 +17,12 @@ import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
-import { MONTH_OPTIONS, PAYMENT_TYPE_LABEL, PAYMENT_STATUS_LABEL } from "@/constants/order";
+import { PAYMENT_TYPE_LABEL, PAYMENT_STATUS_LABEL } from "@/constants/order";
 import { Order } from "@/types/user";
 
-const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => String(CURRENT_YEAR - 4 + i));
 const PAGE_SIZE = 10;
 
-const FILTER_OPTIONS: { value: TransactionReportFilterType; label: string }[] = [
-  { value: "", label: "Semua Transaksi" },
-  { value: "today", label: "Hari Ini" },
-  { value: "yesterday", label: "Kemarin" },
-  { value: "this_week", label: "Minggu Ini" },
-  { value: "this_month", label: "Bulan Ini" },
-  { value: "this_year", label: "Tahun Ini" },
-  { value: "range", label: "Rentang Tanggal" },
-  { value: "specific_month", label: "Pilih Bulan" },
-  { value: "specific_year", label: "Pilih Tahun" },
-];
+
 
 const EMPTY_SUMMARY: TransactionReportSummary = {
   totalTransaksi: 0,
@@ -66,8 +54,6 @@ export function TransactionReportView() {
   const [filterType, setFilterType] = useState<TransactionReportFilterType>("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [month, setMonth] = useState("");
-  const [year, setYear] = useState("");
   const [page, setPage] = useState(1);
 
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
@@ -78,18 +64,14 @@ export function TransactionReportView() {
     filterType,
     startDate: filterType === "range" ? startDate : undefined,
     endDate: filterType === "range" ? endDate : undefined,
-    month: filterType === "specific_month" ? month : undefined,
-    year: filterType === "specific_month" || filterType === "specific_year" ? year : undefined,
   };
 
-  // Filter Rentang Tanggal/Pilih Bulan/Pilih Tahun butuh kelengkapan input tertentu
+  // Filter Rentang Tanggal butuh kelengkapan input tertentu
   // sebelum request dikirim (sinkron dengan validasi backend) — supaya tidak spam
   // request 422 saat admin baru memilih filter tapi belum mengisi field pendukungnya.
   const isFilterReady =
     filterType !== "range" || Boolean(startDate && endDate);
-  const isMonthFilterReady = filterType !== "specific_month" || Boolean(month && year);
-  const isYearFilterReady = filterType !== "specific_year" || Boolean(year);
-  const canFetch = isFilterReady && isMonthFilterReady && isYearFilterReady;
+  const canFetch = isFilterReady;
 
   async function fetchReport() {
     if (!canFetch) return;
@@ -109,21 +91,13 @@ export function TransactionReportView() {
   useEffect(() => {
     fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterType, startDate, endDate, month, year, page]);
+  }, [filterType, startDate, endDate, page]);
 
   // Reset ke halaman 1 setiap kali filter (bukan halaman itu sendiri) berubah.
   useEffect(() => {
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterType, startDate, endDate, month, year]);
-
-  function handleFilterTypeChange(value: TransactionReportFilterType) {
-    setFilterType(value);
-    setStartDate("");
-    setEndDate("");
-    setMonth("");
-    setYear("");
-  }
+  }, [filterType, startDate, endDate]);
 
   async function handleExport(scope: "filtered" | "all") {
     setIsExporting(true);
@@ -152,95 +126,44 @@ export function TransactionReportView() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-500">Filter Laporan</label>
-            <select
-              value={filterType}
-              onChange={(e) => handleFilterTypeChange(e.target.value as TransactionReportFilterType)}
+            <label className="mb-1 block text-xs font-medium text-neutral-500">Tanggal Awal</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                if (e.target.value && endDate) setFilterType("range");
+                else setFilterType("");
+              }}
               className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-            >
-              {FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value || "all"} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
-
-          {filterType === "range" && (
-            <>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-500">Tanggal Awal</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-500">Tanggal Akhir</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  min={startDate || undefined}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-                />
-              </div>
-            </>
-          )}
-
-          {filterType === "specific_month" && (
-            <>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-500">Bulan</label>
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-                >
-                  <option value="">Pilih Bulan</option>
-                  {MONTH_OPTIONS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-500">Tahun</label>
-                <select
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-                >
-                  <option value="">Pilih Tahun</option>
-                  {YEAR_OPTIONS.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
-          )}
-
-          {filterType === "specific_year" && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-neutral-500">Tahun</label>
-              <select
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-                className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-              >
-                <option value="">Pilih Tahun</option>
-                {YEAR_OPTIONS.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-neutral-500">Tanggal Akhir</label>
+            <input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                if (startDate && e.target.value) setFilterType("range");
+                else setFilterType("");
+              }}
+              className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
+            />
+          </div>
+          {(startDate || endDate) && (
+            <button
+              type="button"
+              onClick={() => {
+                setStartDate("");
+                setEndDate("");
+                setFilterType("");
+              }}
+              className="mb-1 text-xs text-neutral-500 hover:text-neutral-700 underline"
+            >
+              Reset
+            </button>
           )}
         </div>
 
@@ -319,7 +242,7 @@ export function TransactionReportView() {
             >
               <p className="font-semibold text-neutral-900">Data Sesuai Filter Aktif</p>
               <p className="text-xs text-neutral-500">
-                {filterType ? FILTER_OPTIONS.find((o) => o.value === filterType)?.label : "Semua Transaksi"} —{" "}
+                {filterType === "range" ? `Dari ${formatDate(startDate)} s.d. ${formatDate(endDate)}` : "Semua Transaksi"} —{" "}
                 {summary.totalTransaksi} transaksi
               </p>
             </button>
