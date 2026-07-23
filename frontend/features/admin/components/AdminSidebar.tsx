@@ -14,6 +14,7 @@ import {
   UserX,
   Star,
   Settings,
+  Layers,
 } from "lucide-react";
 import { ROUTES } from "@/constants/routes";
 import { Logo } from "@/components/ui/Logo";
@@ -22,6 +23,10 @@ import { cn } from "@/utils/cn";
 const ADMIN_NAV = [
   { label: "Dashboard", href: ROUTES.admin.dashboard, icon: LayoutDashboard },
   { label: "Produk", href: ROUTES.admin.produk, icon: Package },
+  // UPDATE — Halaman Inventory Stock Admin: menu baru, khusus manajemen stok
+  // seluruh varian produk, ditempatkan tepat di bawah "Produk" karena sama-sama
+  // seputar data produk.
+  { label: "Inventory Stock", href: ROUTES.admin.inventoryStok, icon: Layers },
   { label: "Kategori", href: ROUTES.admin.kategori, icon: FolderTree },
   { label: "Banner Produk", href: ROUTES.admin.banner, icon: ImageIcon },
   { label: "Hero Banner", href: ROUTES.admin.heroBanner, icon: GalleryHorizontal },

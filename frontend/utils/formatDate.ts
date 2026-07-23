@@ -11,6 +11,25 @@ export function formatDate(dateString: string): string {
 }
 
 /**
+ * Format tanggal + jam ISO menjadi format Indonesia, contoh:
+ * "2026-07-22T10:05:00Z" -> "22/07/2026 10:05". Dipakai Riwayat Perubahan
+ * Stok (Halaman Inventory Stock Admin) supaya "Tanggal Perubahan" tetap
+ * jelas walau ada beberapa perubahan pada tanggal yang sama.
+ */
+export function formatDateTime(dateString: string): string {
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+    .format(date)
+    .replace(/\./g, ":");
+}
+
+/**
  * Format waktu notifikasi jadi relatif ("Baru saja", "5 menit lalu", dst) untuk
  * notifikasi yang masih baru, lalu jatuh ke format tanggal biasa untuk yang lebih lama.
  * Dipakai NotificationBell (Update 1 — Sistem Notifikasi User).
