@@ -67,8 +67,8 @@ export default async function HomePage() {
         </div>
       )}
 
-      <ProductRail title="Produk Terbaru" products={products.slice(0, 4)} />
-      <ProductRail title="Produk Terlaris" products={products.slice(0, 4)} />
+      <ProductRail title="Produk Terbaru" products={products} />
+      <ProductRail title="Produk Terlaris" products={products} />
       <ProductRail title="Produk Rekomendasi" products={products} />
     </>
   );
