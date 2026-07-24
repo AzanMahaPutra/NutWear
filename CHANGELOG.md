@@ -1,136 +1,126 @@
-# CHANGELOG — Slider Produk Terbaru / Terlaris / Rekomendasi (Beranda)
+# CHANGELOG — Perbaikan Bug Harga Normal & Harga Promo
 
-## Ringkasan Perubahan
+## Penyebab Bug
 
-Mengubah cara tampil tiga section produk di halaman Beranda — **Produk
-Terbaru**, **Produk Terlaris**, dan **Produk Rekomendasi** — dari grid yang
-turun ke baris berikutnya (wrap) saat produk lebih dari 4, menjadi
-**slider/carousel horizontal**.
+Bug ada di **satu titik**: skema validasi Zod pada form Admin Produk
+(`ProductForm.tsx`), bukan di backend, database, maupun logika tampilan
+website (semua bagian itu sudah menangani `NULL` dengan benar).
 
-- Selama jumlah produk pada satu section **≤ 4**, tampilan **tidak berubah**
-  sama sekali: tetap grid statis seperti sebelumnya.
-- Saat jumlah produk **> 4**, section otomatis berubah jadi slider horizontal
-  — tidak pernah turun ke baris kedua.
-- Slider mendukung:
-  - **Drag pakai mouse** di desktop (Pointer Events, cursor berubah jadi
-    "grabbing" saat digeser).
-  - **Swipe** natural di perangkat mobile (memakai scroll horizontal bawaan
-    browser, bukan reimplementasi manual, supaya tetap terasa halus/native).
-  - **Tombol Previous & Next** yang menggeser satu "halaman" (± lebar area
-    yang terlihat) dengan animasi smooth scroll, dan otomatis
-    disembunyikan saat sudah mentok di ujung kiri/kanan.
-  - Scroll-snap (`snap-x snap-mandatory`) supaya kartu produk selalu berhenti
-    rapi sejajar, tidak terpotong di tengah.
-- **Desain card produk (`ProductCard`) sama sekali tidak diubah** — hanya
-  cara menampilkan daftar produk yang berubah (grid vs slider). Semua info
-  di card (foto, badge New Arrival/Best Seller, harga, promo, warna, rating,
-  dll.) tetap identik.
-- Jumlah kartu yang terlihat sekaligus mengikuti breakpoint layar:
-  - **Desktop (≥1024px):** ~4 kartu.
-  - **Tablet (640–1023px):** ~2–3 kartu.
-  - **Mobile (<640px):** ~1–2 kartu (kartu berikutnya sedikit terlihat di
-    tepi sebagai isyarat visual bahwa masih bisa digeser).
+Field Harga Promo divalidasi dengan:
 
-## Cara Kerja Slider
+```
+hargaPromo: z.union([z.coerce.number().min(0), z.literal("")]).optional()
+```
 
-Slider dibangun **native** (overflow-x + CSS scroll-snap bawaan browser),
-**tanpa menambah dependency/library baru** ke `package.json` — sengaja
-dipilih supaya tetap ringan walau jumlah produk sangat banyak, karena tidak
-ada library carousel tambahan yang perlu dimuat/di-bundle:
+Saat admin membiarkan field Harga Promo **kosong**, React Hook Form mengirim
+nilai string kosong (`""`) ke Zod. Zod mencoba anggota union **secara
+berurutan** dan memakai hasil pertama yang berhasil. Karena
+`z.coerce.number()` mengubah `""` menjadi `Number("")`, dan `Number("")`
+di JavaScript bernilai `0` (bukan `NaN`), maka validasi `min(0)` **lolos**
+dengan hasil `0` — union berhenti di situ dan `z.literal("")` (opsi kedua)
+tidak pernah tercapai.
 
-- Container kartu produk memakai `overflow-x-auto` + `snap-x snap-mandatory`
-  + class `.no-scrollbar` (utility yang sudah ada di
-  `app/globals.css`) untuk menyembunyikan scrollbar browser sehingga terlihat
-  seperti carousel, bukan area scroll biasa.
-- **Swipe mobile** memanfaatkan scroll-touch native browser sepenuhnya (tidak
-  di-intercept oleh JavaScript), supaya terasa sehalus scroll biasa.
-- **Drag mouse desktop** ditangani lewat Pointer Events
-  (`onPointerDown/Move/Up/Leave`): posisi awal disimpan, lalu `scrollLeft`
-  container diupdate mengikuti pergeseran pointer. Sentuhan (`pointerType ===
-  "touch"`) sengaja dilewati di handler ini supaya tidak bentrok dengan
-  swipe native di atas.
-- Klik ke halaman detail produk saat berakhir dari sebuah drag (bukan klik
-  murni) ditahan lewat `onClickCapture`, supaya user yang menggeser slider
-  tidak sengaja terlempar ke halaman produk.
-- Tombol **Previous/Next** memanggil `element.scrollBy({ left, behavior:
-  "smooth" })` sejauh ~90% lebar container yang terlihat, lalu tampil/hilang
-  otomatis (`canScrollPrev` / `canScrollNext`) berdasarkan posisi `scrollLeft`
-  saat ini — dicek ulang tiap kali user scroll (event `onScroll`) maupun saat
-  ukuran layar berubah (`ResizeObserver` + `window resize`), supaya tetap
-  akurat di semua breakpoint (Desktop/Tablet/Mobile).
-- Lazy loading gambar tetap berjalan seperti sebelumnya lewat komponen
-  `next/image` bawaan di dalam `ProductCard` (tidak diubah) — kartu di luar
-  viewport slider tidak memuat gambar penuh sampai digeser mendekat.
+Akibatnya, field yang sengaja dikosongkan Admin **berubah otomatis menjadi
+angka `0`** tepat di tahap validasi form, sebelum sempat diproses lebih
+lanjut oleh `onSubmit`. Nilai `0` ini kemudian:
 
-## Catatan Penting
+- Tidak dianggap "kosong" oleh `onSubmit` (`values.hargaPromo === ""` →
+  `false`, karena nilainya sudah jadi angka `0`), sehingga dikirim ke API
+  sebagai `hargaPromo: 0`, bukan `null`.
+- Disimpan Backend sebagai `harga_promo = 0` di database (backend memang
+  sudah benar: hanya mengubah jadi `NULL` kalau menerima `null`/`""`, tapi
+  yang diterima memang sudah `0`).
+- Dibaca sebagai "promo aktif" oleh `isPromoActive()` (frontend & backend),
+  karena keduanya mengecek `hargaPromo == null` — dan `0 == null` bernilai
+  `false`. Maka harga normal ditampilkan dicoret dan `Rp0` muncul sebagai
+  harga promo, padahal Admin tidak pernah mengisi promo sama sekali.
 
-- **Tidak ada refactor besar.** Perubahan hanya menyentuh komponen tampilan
-  section produk Beranda; komponen, service, dan struktur database yang
-  sudah ada tetap dipakai apa adanya.
-- **Struktur folder project tidak diubah.** File baru (`ProductSlider.tsx`)
-  ditambahkan di folder yang sudah ada (`features/home/components/`),
-  mengikuti pola penamaan komponen Beranda lain di folder yang sama
-  (`HeroBanner.tsx`, `CategoryGrid.tsx`, `PromoBanner.tsx`).
-- `ProductRail` di `app/(shop)/page.tsx` sebelumnya membatasi section
-  **"Produk Terbaru"** dan **"Produk Terlaris"** hanya menampilkan 4 produk
-  pertama (`products.slice(0, 4)`), sehingga slider tidak akan pernah aktif
-  untuk kedua section tersebut. Batasan ini dihapus (kini memakai daftar
-  produk penuh yang sudah diambil dari `productService.getAll({ pageSize:
-  12 })`, sama seperti section "Produk Rekomendasi") supaya slider benar-benar
-  berfungsi begitu produk lebih dari 4 — sesuai inti permintaan update ini.
-  Tidak ada perubahan lain pada cara data produk diambil/diurutkan.
-- Fitur di luar tampilan card produk Beranda (Cart, Checkout, Wishlist,
-  Admin Dashboard, Midtrans, dsb.) **tidak disentuh sama sekali**.
-- Kompatibel penuh dengan Next.js App Router (Server Component `page.tsx`
-  tetap memanggil `ProductRail` seperti sebelumnya), Express, Supabase, dan
-  Midtrans — tidak ada perubahan pada layer backend/API/database.
-- **Tidak ada dependency baru** ditambahkan ke `package.json` /
-  `package-lock.json` — slider dibangun dari primitif CSS + React yang sudah
-  tersedia di project.
+Semua lapisan lain (validator Express, `productService.js`,
+`productRepository.js`, `utils/promo.ts`, `utils/promo.js`, `ProductCard`,
+`ProductPurchasePanel`) sudah memeriksa `null`/`""` dengan benar dan tidak
+diubah, karena akar masalahnya murni di pengurutan union Zod tersebut.
 
-## File yang Diubah / Ditambahkan
+## Perubahan yang Dilakukan
 
-### Frontend
-- `frontend/features/home/components/ProductSlider.tsx` **(baru)** — komponen
-  slider/carousel horizontal native (drag mouse, swipe mobile, tombol
-  Prev/Next, scroll-snap) yang membungkus `ProductCard` tanpa mengubahnya.
-- `frontend/features/home/components/ProductRail.tsx` — kini memilih antara
-  grid statis (≤4 produk, perilaku lama tidak berubah) atau `ProductSlider`
-  (>4 produk).
-- `frontend/app/(shop)/page.tsx` — menghapus `.slice(0, 4)` pada section
-  "Produk Terbaru" dan "Produk Terlaris" supaya slider punya data untuk
-  benar-benar aktif saat produk tersedia lebih dari 4 (lihat "Catatan
-  Penting" di atas). Tidak ada perubahan lain pada halaman ini.
+Menukar urutan union pada field `hargaPromo` di skema Zod: `z.literal("")`
+dicoba **lebih dulu** sebelum `z.coerce.number()`. Dengan urutan ini:
 
-Tidak ada perubahan pada `ProductCard`, service, store, tipe data, migrasi
-database, maupun kode backend.
+- Input kosong (`""`) tetap dikenali sebagai `""` (bukan dipaksa jadi
+  angka), lalu diteruskan `onSubmit` menjadi `null` seperti seharusnya.
+- Input angka biasa (`"250000"`) tetap divalidasi & dikonversi ke number
+  seperti sebelumnya — tidak ada perubahan perilaku untuk kasus ini.
+- Input angka `"0"` yang **sengaja** diketik Admin tetap valid sebagai `0`
+  (sesuai requirement: kalau Admin betul-betul mengisi 0, baru boleh
+  tersimpan & tampil sebagai Rp0).
+
+Tidak ada perubahan pada backend (validator, controller, service,
+repository), skema database, maupun komponen tampilan (`ProductCard`,
+`ProductPurchasePanel`, `utils/promo.ts`, `utils/promo.js`) karena semuanya
+sudah benar — bug murni terjadi sebelum data itu meninggalkan form.
+
+*Catatan:* pola union yang sama (`z.union([z.coerce.number()...,
+z.literal("")])`) juga dipakai di `BannerForm.tsx` untuk field
+`priceBeforeDiscount`/`pricePromo`. Field tersebut milik fitur **Banner**,
+bukan sistem harga produk, jadi sengaja **tidak** ikut diubah pada update
+ini sesuai batasan tugas (perubahan dibatasi hanya pada sistem harga
+produk).
+
+## File yang Diubah
+
+- `frontend/features/admin/components/ProductForm.tsx` — perbaikan urutan
+  union pada skema Zod field `hargaPromo` (satu baris).
+
+Tidak ada file baru dan tidak ada migration database yang diperlukan,
+karena kolom `harga_promo` di tabel `products` memang sudah bertipe
+nullable sejak awal (`migrations/20260708_add_product_promo_price_and_new_arrival.sql`)
+dan seluruh kode backend sudah mendukung `NULL` dengan benar.
 
 ## Hasil Pengujian
 
-Diverifikasi lewat `tsc --noEmit` (0 error), `eslint` (0 error/warning), dan
-`next build` (compile & lint sukses; tahap export data gagal hanya karena
-tidak ada koneksi ke backend API di lingkungan build ini — bukan disebabkan
-oleh perubahan pada update ini) untuk seluruh skenario berikut:
+Karena environment ini tidak menjalankan browser, alur `onSubmit` disimulasikan
+langsung memakai skema Zod yang sudah diperbaiki (nilai yang sama persis
+seperti yang dikirim `react-hook-form` dari input `type="number"`):
 
-| # | Skenario | Hasil |
-|---|----------|-------|
-| 1 | Produk berjumlah 4 | Tetap tampil grid seperti sebelumnya, tidak ada slider/tombol Prev-Next. |
-| 2 | Produk berjumlah lebih dari 4 | Tidak turun ke baris kedua — otomatis berubah jadi slider horizontal (`ProductRail` mendeteksi `products.length > 4`). |
-| 3 | Slider digeser pakai mouse | Drag lewat Pointer Events menggeser `scrollLeft` container secara real-time; klik di ujung drag tidak membuka halaman produk. |
-| 4 | Slider di-swipe di HP | Memakai scroll-touch native browser (bukan reimplementasi manual) sehingga swipe terasa halus di perangkat mobile. |
-| 5 | Tombol Next & Previous | `scrollBy` dengan smooth scroll; tombol otomatis hilang saat sudah mentok di ujung kiri (`canScrollPrev`) atau ujung kanan (`canScrollNext`). |
-| 6 | Responsive Desktop/Tablet/Mobile | Lebar kartu memakai breakpoint Tailwind: ~4 kartu di desktop (`lg:`), ~2–3 di tablet (`sm:`/`md:`), ~1–2 di mobile (default). |
-| 7 | Desain card produk tidak berubah | `ProductCard.tsx` tidak disentuh sama sekali; hanya dibungkus wrapper lebar responsif di dalam slider. |
+| Input di field Harga Promo | Hasil parse Zod (sebelum fix) | Hasil parse Zod (setelah fix) | Nilai dikirim ke API |
+|---|---|---|---|
+| kosong (`""`)              | `0` ❌ (bug)                   | `""` ✅                        | `null` ✅ |
+| `"250000"`                 | `250000` ✅                    | `250000` ✅                    | `250000` ✅ |
+| `"0"` (sengaja diisi 0)    | `0`                            | `0` ✅                         | `0` ✅ |
+| tidak diisi (`undefined`)  | `undefined` ✅                 | `undefined` ✅                 | `null` ✅ |
 
-`tsc --noEmit`:
-```
-$ npx tsc --noEmit -p tsconfig.json
-(tidak ada output — 0 error)
-```
+Pemetaan ke 5 skenario pengujian yang diminta:
 
-`eslint` (`next/core-web-vitals`) pada seluruh file yang diubah:
-```
-$ npx eslint features/home/components/ProductSlider.tsx \
-    features/home/components/ProductRail.tsx "app/(shop)/page.tsx"
-(tidak ada output — 0 error, 0 warning)
-```
+1. **Admin hanya mengisi Harga Normal** → Harga Promo kosong divalidasi
+   sebagai `""` → dikirim sebagai `hargaPromo: null` → backend menyimpan
+   `harga_promo = NULL` → `isPromoActive()` mengembalikan `false` →
+   website hanya menampilkan Harga Normal, tidak ada Rp0. ✅
+2. **Admin menambahkan Promo** (Harga Normal 300000, Harga Promo 250000)
+   → tidak terpengaruh perubahan ini (jalur angka biasa tidak berubah) →
+   Harga Normal tampil dicoret, Harga Promo tampil menonjol. ✅
+3. **Admin menghapus Promo** (mengosongkan kembali field Harga Promo) →
+   sama seperti skenario 1, field kosong divalidasi sebagai `""` → dikirim
+   `null` → tersimpan `NULL` → website kembali hanya menampilkan Harga
+   Normal. ✅
+4. **Tidak ada lagi Harga Promo otomatis menjadi Rp0** saat field memang
+   dikosongkan — ini akar bug yang diperbaiki (lihat baris "kosong" pada
+   tabel di atas: `0` ❌ → `""` ✅). ✅
+5. **Data harga tetap benar setelah produk diedit berkali-kali** — karena
+   perbaikan ini murni di lapisan validasi form (bukan mengubah cara data
+   dibaca/disimpan), field yang sudah terisi promo tetap terbaca & tersimpan
+   seperti biasa pada edit berulang; field yang dikosongkan konsisten
+   menjadi `null`, bukan tertukar/menumpuk jadi `0`. ✅
+
+**Pengecekan TypeScript & Lint:**
+
+- `npx tsc --noEmit` dijalankan untuk seluruh project frontend → **0 error**
+  (termasuk pada `ProductForm.tsx` yang diubah). Tipe hasil union
+  (`"" | number | undefined`) tidak berubah dari sebelumnya, hanya urutan
+  pengecekan yang ditukar, sehingga tidak ada dampak ke tipe di tempat lain
+  yang memakai `ProductFormValues`.
+- `next lint` / ESLint tidak dapat dijalankan di environment ini karena
+  project memang **belum memiliki file konfigurasi ESLint** sama sekali
+  (`.eslintrc*` / `eslint.config.*` tidak ditemukan) — kondisi ini sudah ada
+  sebelum perubahan ini dan tidak disebabkan oleh update ini. Perubahan yang
+  dilakukan hanya menukar urutan dua anggota union Zod (satu baris), tanpa
+  menambah sintaks atau pola baru, sehingga tidak berisiko menimbulkan
+  masalah lint di luar apa yang sudah ada di project.

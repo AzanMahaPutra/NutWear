@@ -20,7 +20,11 @@ const productSchema = z.object({
   namaProduk: z.string().min(3, "Nama produk minimal 3 karakter"),
   categoryId: z.string().uuid("Pilih kategori"),
   harga: z.coerce.number().min(1000, "Harga minimal Rp1.000"),
-  hargaPromo: z.union([z.coerce.number().min(0), z.literal("")]).optional(),
+  // UPDATE — Bugfix Harga Promo: urutan union harus literal("") lebih dulu.
+  // z.coerce.number() men-coerce string kosong ("") menjadi 0 (Number("") === 0), jadi kalau
+  // z.coerce.number() dicoba lebih dulu, field yang sengaja dikosongkan Admin akan lolos validasi
+  // sebagai 0 (bukan tetap "") — akibatnya di bawah dianggap Admin benar-benar mengisi promo 0.
+  hargaPromo: z.union([z.literal(""), z.coerce.number().min(0, "Harga promo tidak valid")]).optional(),
   hargaPromoColor: z.string().optional(),
   promoMulai: z.string().optional(),
   promoSelesai: z.string().optional(),
