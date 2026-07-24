@@ -20,5 +20,10 @@ export function enrichProduct(product: Product): Product {
       product.colors ??
       uniqueColorNames.map((name) => ({ code: name, hex: deriveHexFromColorName(name) })),
     fiturSingkat: product.fiturSingkat ?? ["Uniseks"],
+    // UPDATE — Card Produk: Rating & Total Terjual. Backend (productService)
+    // sudah selalu mengirim kedua field ini, fallback ke 0 hanya jaring pengaman.
+    rating: product.rating ?? 0,
+    reviewCount: product.reviewCount ?? 0,
+    totalTerjual: product.totalTerjual ?? 0,
   };
 }

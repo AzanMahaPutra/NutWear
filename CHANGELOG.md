@@ -1,168 +1,116 @@
-# CHANGELOG — Perbaikan Bug Harga Normal & Harga Promo
+# CHANGELOG — Update Card Produk: Rating & Total Terjual
 
-## Penyebab Bug
+## Ringkasan Perubahan
 
-Bug ada di **satu titik**: skema validasi Zod pada form Admin Produk
-(`ProductForm.tsx`), bukan di backend, database, maupun logika tampilan
-website (semua bagian itu sudah menangani `NULL` dengan benar).
+Informasi gender ("Uniseks") yang sebelumnya tampil di bawah Pilihan Warna pada
+Card Produk sudah dihapus. Sebagai gantinya, Card Produk sekarang menampilkan
+**Rating Produk** (bintang) dan **Total Terjual**, diambil dari data
+Review dan Order yang sesungguhnya (bukan data dummy/placeholder).
 
-Field Harga Promo divalidasi dengan:
+Urutan tampilan Card Produk sekarang:
 
 ```
-hargaPromo: z.union([z.coerce.number().min(0), z.literal("")]).optional()
+Gambar Produk
+Pilihan Warna
+Rating Produk + Total Terjual   <-- baru, menggantikan teks "Uniseks"
+Nama Produk
+Harga
 ```
 
-Saat admin membiarkan field Harga Promo **kosong**, React Hook Form mengirim
-nilai string kosong (`""`) ke Zod. Zod mencoba anggota union **secara
-berurutan** dan memakai hasil pertama yang berhasil. Karena
-`z.coerce.number()` mengubah `""` menjadi `Number("")`, dan `Number("")`
-di JavaScript bernilai `0` (bukan `NaN`), maka validasi `min(0)` **lolos**
-dengan hasil `0` — union berhenti di situ dan `z.literal("")` (opsi kedua)
-tidak pernah tercapai.
+Perubahan ini berlaku otomatis di seluruh halaman yang memakai komponen
+`ProductCard` yang sama: Home (Produk Terbaru/Terlaris/Rekomendasi), Halaman
+Semua Produk, Halaman Kategori, Halaman Pencarian, dan Related Product di
+Detail Produk.
 
-Akibatnya, field yang sengaja dikosongkan Admin **berubah otomatis menjadi
-angka `0`** tepat di tahap validasi form, sebelum sempat diproses lebih
-lanjut oleh `onSubmit`. Nilai `0` ini kemudian:
-
-- Tidak dianggap "kosong" oleh `onSubmit` (`values.hargaPromo === ""` →
-  `false`, karena nilainya sudah jadi angka `0`), sehingga dikirim ke API
-  sebagai `hargaPromo: 0`, bukan `null`.
-- Disimpan Backend sebagai `harga_promo = 0` di database (backend memang
-  sudah benar: hanya mengubah jadi `NULL` kalau menerima `null`/`""`, tapi
-  yang diterima memang sudah `0`).
-- Dibaca sebagai "promo aktif" oleh `isPromoActive()` (frontend & backend),
-  karena keduanya mengecek `hargaPromo == null` — dan `0 == null` bernilai
-  `false`. Maka harga normal ditampilkan dicoret dan `Rp0` muncul sebagai
-  harga promo, padahal Admin tidak pernah mengisi promo sama sekali.
-
-Semua lapisan lain (validator Express, `productService.js`,
-`productRepository.js`, `utils/promo.ts`, `utils/promo.js`, `ProductCard`,
-`ProductPurchasePanel`) sudah memeriksa `null`/`""` dengan benar dan tidak
-diubah, karena akar masalahnya murni di pengurutan union Zod tersebut.
-
-## Perubahan yang Dilakukan
-
-Menukar urutan union pada field `hargaPromo` di skema Zod: `z.literal("")`
-dicoba **lebih dulu** sebelum `z.coerce.number()`. Dengan urutan ini:
-
-- Input kosong (`""`) tetap dikenali sebagai `""` (bukan dipaksa jadi
-  angka), lalu diteruskan `onSubmit` menjadi `null` seperti seharusnya.
-- Input angka biasa (`"250000"`) tetap divalidasi & dikonversi ke number
-  seperti sebelumnya — tidak ada perubahan perilaku untuk kasus ini.
-- Input angka `"0"` yang **sengaja** diketik Admin tetap valid sebagai `0`
-  (sesuai requirement: kalau Admin betul-betul mengisi 0, baru boleh
-  tersimpan & tampil sebagai Rp0).
-
-Tidak ada perubahan pada backend (validator, controller, service,
-repository), skema database, maupun komponen tampilan (`ProductCard`,
-`ProductPurchasePanel`, `utils/promo.ts`, `utils/promo.js`) karena semuanya
-sudah benar — bug murni terjadi sebelum data itu meninggalkan form.
-
-*Catatan:* pola union yang sama (`z.union([z.coerce.number()...,
-z.literal("")])`) juga dipakai di `BannerForm.tsx` untuk field
-`priceBeforeDiscount`/`pricePromo`. Field tersebut milik fitur **Banner**,
-bukan sistem harga produk, jadi sengaja **tidak** ikut diubah pada update
-ini sesuai batasan tugas (perubahan dibatasi hanya pada sistem harga
-produk).
-
-## Update Lanjutan — Data Lama yang Sudah Terlanjur Tersimpan Sebagai 0
-
-Setelah fix di atas terpasang, ditemukan bahwa produk yang dibuat/diedit
-**sebelum** fix ini tetap tampil bermasalah (tetap tampil promo/Rp0)
-meskipun Admin tidak mengisi apa-apa saat mengedit ulang. Ini **bukan bug
-baru** — fix di atas hanya mencegah data baru rusak lagi, sedangkan baris
-`products` yang sudah kadung tersimpan `harga_promo = 0` (akibat bug lama)
-tetap `0` sampai dibersihkan.
-
-Ditemukan juga penyebab kedua yang berkaitan: di halaman Edit Produk,
-default value field Harga Promo memakai `initialData.hargaPromo ?? ""`.
-Operator `??` hanya mengganti `null`/`undefined`, **bukan** `0` — jadi kalau
-produk itu sudah kadung punya `harga_promo = 0` di database, field Harga
-Promo di form Edit akan otomatis **terisi "0"**, bukan tampil kosong. Kalau
-Admin membuka & menyimpan ulang produk itu tanpa sadar mengosongkan field
-tsb secara manual, nilai 0 ikut tersimpan lagi.
-
-**Perbaikan:** menambahkan migration `20260724_fix_harga_promo_zero_bug.sql`
-yang mengembalikan seluruh baris `products` dengan `harga_promo = 0`
-menjadi `NULL`. Setelah migration ini dijalankan di Supabase:
-
-- Semua produk lama yang sebelumnya salah tampil promo/Rp0 akan otomatis
-  kembali hanya menampilkan Harga Normal.
-- Saat Admin membuka Edit Produk untuk produk-produk itu, field Harga Promo
-  akan tampil **kosong** (bukan "0") lagi, karena `initialData.hargaPromo`
-  sudah menjadi `null` di database.
-
-Tidak ada perubahan kode tambahan untuk bagian ini — perbaikan `ProductForm.tsx`
-di atas sudah cukup untuk mencegah bug ini terjadi lagi ke depannya; migration
-ini hanya membersihkan data yang sudah terlanjur rusak dari sebelum fix
-dipasang.
-
-**Cara menjalankan:** buka Supabase SQL Editor pada project ini, jalankan isi
-file `backend/src/database/migrations/20260724_fix_harga_promo_zero_bug.sql`.
-Aman dijalankan berkali-kali (idempotent).
+Catatan: Wishlist (halaman Wishlist) memakai layout baris (`WishlistItemRow`)
+yang berbeda dari Card Produk dan tidak pernah menampilkan teks "Uniseks",
+jadi tidak ada perubahan tampilan di sana. Halaman "Pasangan Produk" di Detail
+Produk juga memakai layout kartu tersendiri (`PairedProductsSection`, bukan
+`ProductCard`) yang juga tidak pernah menampilkan info gender — dibiarkan
+tidak berubah sesuai aturan "jangan mengubah fitur yang tidak berhubungan".
 
 ## File yang Diubah
 
-- `frontend/features/admin/components/ProductForm.tsx` — perbaikan urutan
-  union pada skema Zod field `hargaPromo` (satu baris), mencegah bug
-  terulang untuk data baru.
-- `backend/src/database/migrations/20260724_fix_harga_promo_zero_bug.sql`
-  (**baru**) — migration untuk membersihkan data produk lama yang sudah
-  terlanjur tersimpan `harga_promo = 0` akibat bug ini, mengembalikannya
-  jadi `NULL`.
+### Backend
 
-Kolom `harga_promo` sendiri sejak awal memang sudah bertipe nullable
-(`migrations/20260708_add_product_promo_price_and_new_arrival.sql`) dan
-seluruh kode backend sudah mendukung `NULL` dengan benar — migration baru
-di atas hanya memperbaiki *data* yang sudah kadung salah, bukan struktur
-tabel.
+- **`backend/src/repositories/reviewRepository.js`**
+  Tambah fungsi `getAverageRatings(productIds)` — versi batch dari
+  `getAverageRating()` yang sudah ada, mengambil rata-rata rating & jumlah
+  review untuk banyak produk sekaligus dalam satu query (bukan satu query per
+  produk), supaya Card Produk yang tampil dalam jumlah banyak tetap ringan.
+
+- **`backend/src/repositories/productRepository.js`**
+  Tambah fungsi `getSoldCounts(productIds)` — menghitung total quantity
+  `order_items` per produk, HANYA dari order berstatus `sudah_dibayar` atau
+  `selesai` (lihat bagian "Cara Pengambilan Data" di bawah).
+
+- **`backend/src/services/productService.js`**
+  Tambah fungsi `attachRatingAndSold()` yang memanggil kedua fungsi di atas
+  secara paralel lalu menyisipkan field `rating`, `reviewCount`, dan
+  `totalTerjual` ke setiap response produk. Dipasang di tiga endpoint publik
+  yang memasok data ke Card Produk: `getProducts()` (list/grid/search/kategori),
+  `getProductById()`, dan `getProductBySlug()` (Detail Produk, termasuk Related
+  Product). `createProduct()`/`updateProduct()` (dipakai Admin) tidak disentuh
+  karena responsnya tidak dipakai Card Produk.
+
+### Frontend
+
+- **`frontend/types/product.ts`**
+  Tambah field opsional `totalTerjual?: number` pada tipe `Product`.
+
+- **`frontend/utils/formatSoldCount.ts`** *(file baru)*
+  Util format angka Total Terjual: pemisah ribuan titik untuk angka wajar
+  (`1.250`, `15.200`), disingkat `rb+`/`jt+` untuk angka sangat besar
+  (`100 rb+`, `1 jt+`) supaya tidak membuat Card melebar/tumpuk.
+
+- **`frontend/utils/enrichProduct.ts`**
+  Tambah fallback `rating ?? 0`, `reviewCount ?? 0`, `totalTerjual ?? 0`
+  sebagai jaring pengaman (backend sudah selalu mengirim ketiganya). Default
+  `fiturSingkat` (dipakai Purchase Panel & Wishlist, bukan Card Produk) TIDAK
+  diubah supaya tampilan di luar Card Produk tidak ikut berubah.
+
+- **`frontend/components/shared/ProductCard.tsx`**
+  - Menghapus baris info gender ("Uniseks"/"Pria"/"Wanita") dan teks fallback
+    "Uniseks" yang sebelumnya tampil di bawah Pilihan Warna.
+  - Menyusun ulang urutan tampilan menjadi: Gambar -> Pilihan Warna -> Rating +
+    Total Terjual -> Nama Produk -> Harga (rentang ukuran/`sizeRangeLabel`
+    tetap dipertahankan sebagai baris kecil di bawah warna karena merupakan
+    fitur terpisah yang tidak berhubungan dengan info gender).
+  - Menambah baris Rating (ikon bintang, komponen `RatingStars` yang sudah
+    ada) + `"{jumlah} Terjual"` (via `formatSoldCount`).
+  - Baris ini dibungkus `flex items-center` + `truncate` pada teks Terjual
+    supaya tetap satu baris rapi di Desktop, Tablet, maupun Mobile (tidak
+    bertumpuk/keluar dari Card).
+
+## Cara Pengambilan Data
+
+**Rating Produk** — rata-rata kolom `rating` dari tabel `reviews`, HANYA
+baris dengan `status = 'ditampilkan'` (review yang disembunyikan Admin tidak
+ikut dihitung — logika ini sama persis dengan `getAverageRating()` yang sudah
+dipakai halaman Detail Produk). Produk tanpa review sama sekali -> rating
+`0` (Card menampilkan ⭐ 0.0).
+
+**Total Terjual** — jumlah `quantity` dari `order_items` yang `product_id`-nya
+cocok, HANYA untuk order dengan `status` `sudah_dibayar` atau `selesai`.
+Order dengan status `menunggu_pembayaran`, `dibatalkan`, `expired`, `diproses`,
+`dikemas`, `dikirim`, `refund`, maupun status pembayaran gagal TIDAK dihitung
+(sesuai permintaan). Produk yang belum pernah terjual -> `0` (Card
+menampilkan "Terjual 0").
 
 ## Hasil Pengujian
 
-Karena environment ini tidak menjalankan browser, alur `onSubmit` disimulasikan
-langsung memakai skema Zod yang sudah diperbaiki (nilai yang sama persis
-seperti yang dikirim `react-hook-form` dari input `type="number"`):
+| # | Skenario | Hasil |
+|---|----------|-------|
+| 1 | Teks "Uniseks" tidak muncul lagi di Card Produk | ✅ Baris gender & fallback "Uniseks" dihapus dari `ProductCard.tsx` |
+| 2 | Rating produk tampil sesuai data review (hanya review `ditampilkan`) | ✅ `getAverageRatings()` diverifikasi filter `status = 'ditampilkan'`, dipasang di seluruh endpoint publik |
+| 3 | Total Terjual sesuai transaksi valid (`sudah_dibayar`/`selesai` saja) | ✅ `getSoldCounts()` diverifikasi filter status via join `orders!inner(status)` |
+| 4 | Produk tanpa review tetap rapi (⭐ 0.0) | ✅ Fallback `rating ?? 0` di `enrichProduct` + backend selalu mengirim `0` kalau tidak ada key rating |
+| 5 | Produk tanpa penjualan tampil "Terjual 0" | ✅ Fallback `totalTerjual ?? 0`, `formatSoldCount(0)` -> `"0"` |
+| 6 | Seluruh halaman yang memakai Card Produk konsisten | ✅ Semua memakai satu komponen `ProductCard` yang sama; data dipasok lewat `getProducts`/`getProductById`/`getProductBySlug` yang sama |
+| 7 | Responsive Desktop/Tablet/Mobile, teks tidak tumpuk/keluar Card | ✅ Baris Rating+Terjual pakai `flex items-center` + `truncate`, konsisten dengan pola elemen lain di Card yang sudah responsive |
 
-| Input di field Harga Promo | Hasil parse Zod (sebelum fix) | Hasil parse Zod (setelah fix) | Nilai dikirim ke API |
-|---|---|---|---|
-| kosong (`""`)              | `0` ❌ (bug)                   | `""` ✅                        | `null` ✅ |
-| `"250000"`                 | `250000` ✅                    | `250000` ✅                    | `250000` ✅ |
-| `"0"` (sengaja diisi 0)    | `0`                            | `0` ✅                         | `0` ✅ |
-| tidak diisi (`undefined`)  | `undefined` ✅                 | `undefined` ✅                 | `null` ✅ |
-
-Pemetaan ke 5 skenario pengujian yang diminta:
-
-1. **Admin hanya mengisi Harga Normal** → Harga Promo kosong divalidasi
-   sebagai `""` → dikirim sebagai `hargaPromo: null` → backend menyimpan
-   `harga_promo = NULL` → `isPromoActive()` mengembalikan `false` →
-   website hanya menampilkan Harga Normal, tidak ada Rp0. ✅
-2. **Admin menambahkan Promo** (Harga Normal 300000, Harga Promo 250000)
-   → tidak terpengaruh perubahan ini (jalur angka biasa tidak berubah) →
-   Harga Normal tampil dicoret, Harga Promo tampil menonjol. ✅
-3. **Admin menghapus Promo** (mengosongkan kembali field Harga Promo) →
-   sama seperti skenario 1, field kosong divalidasi sebagai `""` → dikirim
-   `null` → tersimpan `NULL` → website kembali hanya menampilkan Harga
-   Normal. ✅
-4. **Tidak ada lagi Harga Promo otomatis menjadi Rp0** saat field memang
-   dikosongkan — ini akar bug yang diperbaiki (lihat baris "kosong" pada
-   tabel di atas: `0` ❌ → `""` ✅). ✅
-5. **Data harga tetap benar setelah produk diedit berkali-kali** — karena
-   perbaikan ini murni di lapisan validasi form (bukan mengubah cara data
-   dibaca/disimpan), field yang sudah terisi promo tetap terbaca & tersimpan
-   seperti biasa pada edit berulang; field yang dikosongkan konsisten
-   menjadi `null`, bukan tertukar/menumpuk jadi `0`. ✅
-
-**Pengecekan TypeScript & Lint:**
-
-- `npx tsc --noEmit` dijalankan untuk seluruh project frontend → **0 error**
-  (termasuk pada `ProductForm.tsx` yang diubah). Tipe hasil union
-  (`"" | number | undefined`) tidak berubah dari sebelumnya, hanya urutan
-  pengecekan yang ditukar, sehingga tidak ada dampak ke tipe di tempat lain
-  yang memakai `ProductFormValues`.
-- `next lint` / ESLint tidak dapat dijalankan di environment ini karena
-  project memang **belum memiliki file konfigurasi ESLint** sama sekali
-  (`.eslintrc*` / `eslint.config.*` tidak ditemukan) — kondisi ini sudah ada
-  sebelum perubahan ini dan tidak disebabkan oleh update ini. Perubahan yang
-  dilakukan hanya menukar urutan dua anggota union Zod (satu baris), tanpa
-  menambah sintaks atau pola baru, sehingga tidak berisiko menimbulkan
-  masalah lint di luar apa yang sudah ada di project.
+**Verifikasi teknis tambahan:**
+- `npx tsc --noEmit` pada seluruh project frontend: **0 error**.
+- `node --check` pada seluruh file backend yang diubah: **valid, tanpa syntax error**.
+- Tidak ada migration database yang diperlukan — seluruh data (rating, status
+  review, status order, quantity) sudah tersedia di skema yang sudah ada.

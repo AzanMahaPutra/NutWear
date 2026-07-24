@@ -4,9 +4,11 @@
 // tabel products/product_images/product_variants di database - ini yang dikembalikan
 // Product API sungguhan.
 //
-// Field lain (rating, reviewCount, hargaAsli, fiturSingkat, isBestseller,
-// colors[].hex) TIDAK ada di skema database. Field-field itu opsional dan
-// dipakai/di-derive di sisi UI saja (mis. rating dari Review API, colors dari variants).
+// Field lain (rating, reviewCount, totalTerjual, hargaAsli, fiturSingkat,
+// isBestseller, colors[].hex) TIDAK ada di skema database secara langsung.
+// rating/reviewCount/totalTerjual DIHITUNG backend (lihat productService.attachRatingAndSold)
+// dari tabel reviews & order_items, lalu disertakan di Product API sungguhan.
+// Sisanya opsional dan dipakai/di-derive di sisi UI saja (mis. colors dari variants).
 
 export interface ProductColor {
   code: string;
@@ -117,6 +119,9 @@ export interface Product {
   isBestseller?: boolean;
   rating?: number;
   reviewCount?: number;
+  /** UPDATE — Card Produk: Total Terjual. Dihitung backend dari order_items pada
+   * order berstatus Sudah Dibayar/Selesai. 0 kalau produk belum pernah terjual. */
+  totalTerjual?: number;
   colors?: ProductColor[];
   pairedProductIds?: string[];
 }
