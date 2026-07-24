@@ -65,15 +65,57 @@ bukan sistem harga produk, jadi sengaja **tidak** ikut diubah pada update
 ini sesuai batasan tugas (perubahan dibatasi hanya pada sistem harga
 produk).
 
+## Update Lanjutan — Data Lama yang Sudah Terlanjur Tersimpan Sebagai 0
+
+Setelah fix di atas terpasang, ditemukan bahwa produk yang dibuat/diedit
+**sebelum** fix ini tetap tampil bermasalah (tetap tampil promo/Rp0)
+meskipun Admin tidak mengisi apa-apa saat mengedit ulang. Ini **bukan bug
+baru** — fix di atas hanya mencegah data baru rusak lagi, sedangkan baris
+`products` yang sudah kadung tersimpan `harga_promo = 0` (akibat bug lama)
+tetap `0` sampai dibersihkan.
+
+Ditemukan juga penyebab kedua yang berkaitan: di halaman Edit Produk,
+default value field Harga Promo memakai `initialData.hargaPromo ?? ""`.
+Operator `??` hanya mengganti `null`/`undefined`, **bukan** `0` — jadi kalau
+produk itu sudah kadung punya `harga_promo = 0` di database, field Harga
+Promo di form Edit akan otomatis **terisi "0"**, bukan tampil kosong. Kalau
+Admin membuka & menyimpan ulang produk itu tanpa sadar mengosongkan field
+tsb secara manual, nilai 0 ikut tersimpan lagi.
+
+**Perbaikan:** menambahkan migration `20260724_fix_harga_promo_zero_bug.sql`
+yang mengembalikan seluruh baris `products` dengan `harga_promo = 0`
+menjadi `NULL`. Setelah migration ini dijalankan di Supabase:
+
+- Semua produk lama yang sebelumnya salah tampil promo/Rp0 akan otomatis
+  kembali hanya menampilkan Harga Normal.
+- Saat Admin membuka Edit Produk untuk produk-produk itu, field Harga Promo
+  akan tampil **kosong** (bukan "0") lagi, karena `initialData.hargaPromo`
+  sudah menjadi `null` di database.
+
+Tidak ada perubahan kode tambahan untuk bagian ini — perbaikan `ProductForm.tsx`
+di atas sudah cukup untuk mencegah bug ini terjadi lagi ke depannya; migration
+ini hanya membersihkan data yang sudah terlanjur rusak dari sebelum fix
+dipasang.
+
+**Cara menjalankan:** buka Supabase SQL Editor pada project ini, jalankan isi
+file `backend/src/database/migrations/20260724_fix_harga_promo_zero_bug.sql`.
+Aman dijalankan berkali-kali (idempotent).
+
 ## File yang Diubah
 
 - `frontend/features/admin/components/ProductForm.tsx` — perbaikan urutan
-  union pada skema Zod field `hargaPromo` (satu baris).
+  union pada skema Zod field `hargaPromo` (satu baris), mencegah bug
+  terulang untuk data baru.
+- `backend/src/database/migrations/20260724_fix_harga_promo_zero_bug.sql`
+  (**baru**) — migration untuk membersihkan data produk lama yang sudah
+  terlanjur tersimpan `harga_promo = 0` akibat bug ini, mengembalikannya
+  jadi `NULL`.
 
-Tidak ada file baru dan tidak ada migration database yang diperlukan,
-karena kolom `harga_promo` di tabel `products` memang sudah bertipe
-nullable sejak awal (`migrations/20260708_add_product_promo_price_and_new_arrival.sql`)
-dan seluruh kode backend sudah mendukung `NULL` dengan benar.
+Kolom `harga_promo` sendiri sejak awal memang sudah bertipe nullable
+(`migrations/20260708_add_product_promo_price_and_new_arrival.sql`) dan
+seluruh kode backend sudah mendukung `NULL` dengan benar — migration baru
+di atas hanya memperbaiki *data* yang sudah kadung salah, bukan struktur
+tabel.
 
 ## Hasil Pengujian
 
