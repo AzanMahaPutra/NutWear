@@ -16,6 +16,7 @@ import { useToastStore } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { enrichProduct } from "@/utils/enrichProduct";
+import { getGenderListLabel } from "@/utils/gender";
 import { ROUTES } from "@/constants/routes";
 
 interface ProductPurchasePanelProps {
@@ -96,6 +97,10 @@ export function ProductPurchasePanel({ product: rawProduct, selectedColor, onSel
       <div className="mb-3 flex items-center gap-2">
         <h1 className="text-2xl font-bold text-neutral-900">{product.namaProduk}</h1>
       </div>
+
+      {product.genders.length > 0 && (
+        <p className="mb-4 text-sm text-neutral-500">Cocok untuk: {getGenderListLabel(product.genders)}</p>
+      )}
 
       {(product.colors?.length ?? 0) > 0 && (
         <div className="mb-5">

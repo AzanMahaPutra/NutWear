@@ -31,7 +31,9 @@ const productSchema = z.object({
   berat: z.coerce.number().min(1, "Berat wajib diisi"),
   deskripsi: z.string().min(10, "Deskripsi minimal 10 karakter"),
   isNewArrival: z.boolean().optional(),
-  gender: z.enum(["pria", "wanita", "uniseks"], { errorMap: () => ({ message: "Gender produk wajib dipilih" }) }),
+  // UPDATE — Gender Produk jadi Multi Select. Admin bisa memilih lebih dari satu
+  // kategori sekaligus lewat Checkbox; minimal satu wajib dipilih.
+  genders: z.array(z.enum(["pria", "wanita", "uniseks"])).min(1, "Minimal satu gender wajib dipilih"),
   // UPDATE 5 — Detail Produk dapat Dikelola per Produk. Semua opsional (boleh kosong,
   // Detail Produk menampilkan "Informasi belum tersedia." kalau kosong).
   detailInfo: z.string().optional(),
@@ -69,6 +71,8 @@ export function ProductForm({ initialData, onSuccess }: ProductFormProps) {
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -84,14 +88,26 @@ export function ProductForm({ initialData, onSuccess }: ProductFormProps) {
           berat: initialData.berat,
           deskripsi: initialData.deskripsi,
           isNewArrival: initialData.isNewArrival ?? false,
-          gender: initialData.gender ?? "uniseks",
+          genders: initialData.genders && initialData.genders.length > 0 ? initialData.genders : ["uniseks"],
           detailInfo: initialData.detailInfo ?? "",
           materialCareInfo: initialData.materialCareInfo ?? "",
           shippingReturnInfo: initialData.shippingReturnInfo ?? "",
           productionInfo: initialData.productionInfo ?? "",
         }
-      : { hargaPromoColor: "#dc2626", isNewArrival: false },
+      : { hargaPromoColor: "#dc2626", isNewArrival: false, genders: ["uniseks"] },
   });
+
+  const selectedGenders = watch("genders") ?? [];
+
+  function toggleGender(value: (typeof GENDER_OPTIONS)[number]["value"]) {
+    const current = new Set(selectedGenders);
+    if (current.has(value)) {
+      current.delete(value);
+    } else {
+      current.add(value);
+    }
+    setValue("genders", Array.from(current), { shouldValidate: true, shouldDirty: true });
+  }
 
   async function onSubmit(values: ProductFormValues) {
     try {
@@ -152,18 +168,23 @@ export function ProductForm({ initialData, onSuccess }: ProductFormProps) {
             </div>
 
             <div className="w-full">
-              <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3.5 focus-within:border-neutral-900">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3.5 focus-within:border-neutral-900">
                 <label className="shrink-0 text-sm font-semibold text-neutral-800">Gender</label>
-                <select {...register("gender")} className="w-full bg-transparent text-right text-sm outline-none">
-                  <option value="">Pilih gender</option>
+                <div className="flex flex-1 flex-wrap justify-end gap-x-4 gap-y-1.5">
                   {GENDER_OPTIONS.map((g) => (
-                    <option key={g.value} value={g.value}>
+                    <label key={g.value} className="flex cursor-pointer items-center gap-1.5 text-sm text-neutral-700">
+                      <input
+                        type="checkbox"
+                        checked={selectedGenders.includes(g.value)}
+                        onChange={() => toggleGender(g.value)}
+                        className="h-4 w-4 rounded border-neutral-300"
+                      />
                       {g.label}
-                    </option>
+                    </label>
                   ))}
-                </select>
+                </div>
               </div>
-              {errors.gender && <p className="mt-1 text-xs text-red-500">{errors.gender.message}</p>}
+              {errors.genders && <p className="mt-1 text-xs text-red-500">{errors.genders.message}</p>}
             </div>
           </div>
 

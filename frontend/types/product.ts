@@ -15,7 +15,7 @@ export interface ProductColor {
   hex: string;
 }
 
-/** Target gender produk. Wajib dipilih admin di form Produk (dropdown). */
+/** Satu kategori gender produk. Produk bisa punya lebih dari satu (lihat Product.genders). */
 export type ProductGender = "pria" | "wanita" | "uniseks";
 
 export interface ProductVariant {
@@ -93,8 +93,14 @@ export interface Product {
   isPromoActive?: boolean;
   /** Status New Arrival, dikontrol admin di halaman Edit Produk. */
   isNewArrival?: boolean;
-  /** Target gender produk (Pria/Wanita/Uniseks), wajib dipilih admin di form Produk. */
-  gender: ProductGender;
+  /**
+   * Target gender produk (Multi Select) — Admin bisa memilih lebih dari satu
+   * kategori sekaligus (mis. Pria + Uniseks) lewat Checkbox di form Produk.
+   * Minimal satu wajib dipilih. Card Produk hanya menampilkan gender utama
+   * (prioritas Pria > Wanita > Uniseks, lihat utils/gender.ts) supaya ringkas;
+   * Detail Produk menampilkan seluruh kategori yang dipilih.
+   */
+  genders: ProductGender[];
   deskripsi: string;
   berat: number;
   isActive: boolean;

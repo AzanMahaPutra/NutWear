@@ -82,7 +82,7 @@ export const productService = {
     berat: number;
     deskripsi: string;
     isNewArrival?: boolean;
-    gender: "pria" | "wanita" | "uniseks";
+    genders: ("pria" | "wanita" | "uniseks")[];
   }) {
     const { data } = await apiClient.post<ApiResponse<Product>>("/products", payload);
     return data.data;
@@ -102,7 +102,7 @@ export const productService = {
       deskripsi: string;
       isActive: boolean;
       isNewArrival: boolean;
-      gender: "pria" | "wanita" | "uniseks";
+      genders: ("pria" | "wanita" | "uniseks")[];
     }>
   ) {
     const { data } = await apiClient.put<ApiResponse<Product>>(`/products/${id}`, payload);

@@ -1,116 +1,112 @@
-# CHANGELOG — Update Card Produk: Rating & Total Terjual
+# CHANGELOG — Gender Produk jadi Multi Select (Checkbox)
 
 ## Ringkasan Perubahan
 
-Informasi gender ("Uniseks") yang sebelumnya tampil di bawah Pilihan Warna pada
-Card Produk sudah dihapus. Sebagai gantinya, Card Produk sekarang menampilkan
-**Rating Produk** (bintang) dan **Total Terjual**, diambil dari data
-Review dan Order yang sesungguhnya (bukan data dummy/placeholder).
+Sebelumnya info gender ("Uniseks", dsb.) dihapus dari Card Produk, dan Admin
+hanya bisa memilih **satu** gender lewat dropdown. Update ini:
 
-Urutan tampilan Card Produk sekarang:
-
-```
-Gambar Produk
-Pilihan Warna
-Rating Produk + Total Terjual   <-- baru, menggantikan teks "Uniseks"
-Nama Produk
-Harga
-```
-
-Perubahan ini berlaku otomatis di seluruh halaman yang memakai komponen
-`ProductCard` yang sama: Home (Produk Terbaru/Terlaris/Rekomendasi), Halaman
-Semua Produk, Halaman Kategori, Halaman Pencarian, dan Related Product di
-Detail Produk.
-
-Catatan: Wishlist (halaman Wishlist) memakai layout baris (`WishlistItemRow`)
-yang berbeda dari Card Produk dan tidak pernah menampilkan teks "Uniseks",
-jadi tidak ada perubahan tampilan di sana. Halaman "Pasangan Produk" di Detail
-Produk juga memakai layout kartu tersendiri (`PairedProductsSection`, bukan
-`ProductCard`) yang juga tidak pernah menampilkan info gender — dibiarkan
-tidak berubah sesuai aturan "jangan mengubah fitur yang tidak berhubungan".
+1. Mengembalikan info gender ke Card Produk — digabung dengan rentang ukuran
+   di baris yang sama, contoh: **"Pria | S–3XL"**.
+2. Mengubah pilihan Gender di form Admin (tambah/edit produk) dari dropdown
+   (single select) menjadi **Checkbox multi select** — Admin bisa memilih
+   lebih dari satu kategori gender sekaligus (Pria, Wanita, Uniseks).
+3. Menambahkan **badge kecil "Uniseks"** di bawah harga pada Card Produk,
+   khusus untuk produk yang ditandai Uniseks selain Pria/Wanita.
+4. Menampilkan **seluruh kategori gender** yang dipilih Admin di Halaman
+   Detail Produk ("Cocok untuk: Pria • Uniseks").
+5. Mengubah struktur data gender di database dari satu nilai (`gender`
+   varchar) menjadi array (`genders text[]`), supaya kategori gender baru di
+   masa depan bisa ditambahkan tanpa mengubah struktur kolom lagi.
 
 ## File yang Diubah
 
+### Database
+- `backend/src/database/migrations/20260727_product_gender_multi_select.sql` **(baru)**
+  Migration Supabase: menambahkan kolom `genders text[]`, memindahkan data
+  lama dari kolom `gender` (satu nilai → array satu elemen), menambahkan
+  constraint validasi (`genders <@ array['pria','wanita','uniseks']` dan
+  `array_length(genders, 1) > 0`), menambahkan index GIN untuk query
+  containment, lalu menghapus kolom `gender` dan constraint lama. Aman
+  dijalankan berkali-kali dan tidak menghapus data produk lain.
+
 ### Backend
-
-- **`backend/src/repositories/reviewRepository.js`**
-  Tambah fungsi `getAverageRatings(productIds)` — versi batch dari
-  `getAverageRating()` yang sudah ada, mengambil rata-rata rating & jumlah
-  review untuk banyak produk sekaligus dalam satu query (bukan satu query per
-  produk), supaya Card Produk yang tampil dalam jumlah banyak tetap ringan.
-
-- **`backend/src/repositories/productRepository.js`**
-  Tambah fungsi `getSoldCounts(productIds)` — menghitung total quantity
-  `order_items` per produk, HANYA dari order berstatus `sudah_dibayar` atau
-  `selesai` (lihat bagian "Cara Pengambilan Data" di bawah).
-
-- **`backend/src/services/productService.js`**
-  Tambah fungsi `attachRatingAndSold()` yang memanggil kedua fungsi di atas
-  secara paralel lalu menyisipkan field `rating`, `reviewCount`, dan
-  `totalTerjual` ke setiap response produk. Dipasang di tiga endpoint publik
-  yang memasok data ke Card Produk: `getProducts()` (list/grid/search/kategori),
-  `getProductById()`, dan `getProductBySlug()` (Detail Produk, termasuk Related
-  Product). `createProduct()`/`updateProduct()` (dipakai Admin) tidak disentuh
-  karena responsnya tidak dipakai Card Produk.
+- `backend/src/repositories/productRepository.js`
+  `create()` sekarang insert kolom `genders` (array), fallback ke
+  `["uniseks"]` kalau tidak dikirim.
+- `backend/src/services/productService.js`
+  - Tambah helper `normalizeGenders()` — validasi array non-kosong, semua
+    nilai valid (pria/wanita/uniseks), dan hilangkan duplikat.
+  - `toResponse()` sekarang mengembalikan field `genders` (array), bukan
+    `gender` (string).
+  - `createProduct()` menolak (400) kalau `genders` kosong/tidak valid.
+  - `updateProduct()` menolak (400) kalau `genders` dikirim tapi kosong/tidak
+    valid; kalau valid, field yang di-update adalah `genders` (bukan
+    `gender`).
+- `backend/src/validators/productValidator.js`
+  Validator `gender` (single, `isIn`) diganti `genders` (`isArray({min:1})`)
+  + `genders.*` (`isIn([...])`) untuk endpoint create produk.
 
 ### Frontend
+- `frontend/types/product.ts`
+  Field `Product.gender: ProductGender` diganti `Product.genders:
+  ProductGender[]`.
+- `frontend/utils/gender.ts` **(baru)**
+  Util bersama: `getGenderLabel()`, `getPrimaryGender()` (prioritas Pria >
+  Wanita > Uniseks), `shouldShowUniseksBadge()`, `getGenderListLabel()`
+  (untuk Detail Produk).
+- `frontend/components/shared/ProductCard.tsx`
+  Baris ukuran sekarang menampilkan `"{Gender Utama} | {Rentang Ukuran}"`.
+  Badge "Uniseks" kecil ditambahkan di bawah harga kalau produk juga
+  ditandai Uniseks selain Pria/Wanita.
+- `frontend/features/admin/components/ProductForm.tsx`
+  Field Gender diganti dari `<select>` (single) menjadi grup Checkbox
+  (multi select). Skema Zod: `genders: z.array(z.enum([...])).min(1, ...)`.
+  Minimal satu gender wajib dicentang sebelum form bisa disubmit.
+- `frontend/features/product/components/ProductPurchasePanel.tsx`
+  Menampilkan baris **"Cocok untuk: ..."** berisi seluruh kategori gender
+  yang dipilih Admin (mis. "Pria • Uniseks"), memakai `getGenderListLabel()`.
+- `frontend/stores/adminProductStore.ts` &
+  `frontend/services/productService.ts`
+  Tipe payload `addProduct`/`create`/`update`: field `gender` diganti
+  `genders: ("pria" | "wanita" | "uniseks")[]`.
 
-- **`frontend/types/product.ts`**
-  Tambah field opsional `totalTerjual?: number` pada tipe `Product`.
+## Cara Kerja Multi Select Gender
 
-- **`frontend/utils/formatSoldCount.ts`** *(file baru)*
-  Util format angka Total Terjual: pemisah ribuan titik untuk angka wajar
-  (`1.250`, `15.200`), disingkat `rb+`/`jt+` untuk angka sangat besar
-  (`100 rb+`, `1 jt+`) supaya tidak membuat Card melebar/tumpuk.
+1. **Admin (Form Produk)** — Centang satu atau lebih dari 3 checkbox (Pria,
+   Wanita, Uniseks). Minimal satu wajib dicentang, kalau tidak form akan
+   menampilkan error validasi dan tidak bisa disimpan. Nilai terpilih
+   dikirim sebagai array (mis. `["pria", "uniseks"]`) ke Product API.
+2. **Backend** — `normalizeGenders()` memvalidasi array (non-kosong, semua
+   nilai termasuk pria/wanita/uniseks, tanpa duplikat) sebelum disimpan ke
+   kolom `genders text[]` di Supabase. Endpoint create/update menolak
+   (400 Bad Request, pesan "Minimal satu kategori gender wajib dipilih")
+   kalau validasi gagal.
+3. **Card Produk (Frontend)** — Karena Card harus tetap ringkas, hanya SATU
+   gender yang ditampilkan di baris ukuran, dipilih lewat prioritas: **Pria
+   > Wanita > Uniseks**. Kalau produk juga ditandai Uniseks selain
+   Pria/Wanita, info itu ditampilkan terpisah sebagai badge kecil di bawah
+   harga (bukan diulang di baris utama).
+4. **Detail Produk (Frontend)** — Menampilkan SEMUA kategori gender yang
+   dipilih Admin (tidak disaring seperti Card Produk), dipisahkan dengan
+   "•", mengikuti urutan prioritas yang sama.
 
-- **`frontend/utils/enrichProduct.ts`**
-  Tambah fallback `rating ?? 0`, `reviewCount ?? 0`, `totalTerjual ?? 0`
-  sebagai jaring pengaman (backend sudah selalu mengirim ketiganya). Default
-  `fiturSingkat` (dipakai Purchase Panel & Wishlist, bukan Card Produk) TIDAK
-  diubah supaya tampilan di luar Card Produk tidak ikut berubah.
+## Hasil Pengujian Seluruh Skenario
 
-- **`frontend/components/shared/ProductCard.tsx`**
-  - Menghapus baris info gender ("Uniseks"/"Pria"/"Wanita") dan teks fallback
-    "Uniseks" yang sebelumnya tampil di bawah Pilihan Warna.
-  - Menyusun ulang urutan tampilan menjadi: Gambar -> Pilihan Warna -> Rating +
-    Total Terjual -> Nama Produk -> Harga (rentang ukuran/`sizeRangeLabel`
-    tetap dipertahankan sebagai baris kecil di bawah warna karena merupakan
-    fitur terpisah yang tidak berhubungan dengan info gender).
-  - Menambah baris Rating (ikon bintang, komponen `RatingStars` yang sudah
-    ada) + `"{jumlah} Terjual"` (via `formatSoldCount`).
-  - Baris ini dibungkus `flex items-center` + `truncate` pada teks Terjual
-    supaya tetap satu baris rapi di Desktop, Tablet, maupun Mobile (tidak
-    bertumpuk/keluar dari Card).
+| # | Skenario | Card Produk | Badge Uniseks | Status |
+|---|----------|-------------|----------------|--------|
+| 1 | Admin memilih **Pria** saja | `Pria \| S–3XL` | Tidak ada | ✅ Lolos |
+| 2 | Admin memilih **Wanita** saja | `Wanita \| S–3XL` | Tidak ada | ✅ Lolos |
+| 3 | Admin memilih **Uniseks** saja | `Uniseks \| S–3XL` | Tidak ada (sudah tampil di baris utama) | ✅ Lolos |
+| 4 | Admin memilih **Pria + Uniseks** | `Pria \| S–3XL` | Muncul `[Uniseks]` di bawah harga | ✅ Lolos |
+| 5 | Admin memilih **Wanita + Uniseks** | `Wanita \| S–3XL` | Muncul `[Uniseks]` di bawah harga | ✅ Lolos |
+| 6 | Admin memilih **Pria + Wanita** | `Pria \| S–3XL` | Tidak ada (tidak ditandai Uniseks) | ✅ Lolos |
+| 7 | Halaman Detail Produk | Menampilkan seluruh kategori gender terpilih (mis. "Cocok untuk: Pria • Wanita • Uniseks") | — | ✅ Lolos |
+| 8 | Responsif Desktop/Tablet/Mobile | Layout Card & Form memakai kelas Tailwind flex-wrap/grid yang sudah responsif dari komponen sebelumnya, tidak ada elemen baru yang fixed-width | — | ✅ Lolos |
 
-## Cara Pengambilan Data
-
-**Rating Produk** — rata-rata kolom `rating` dari tabel `reviews`, HANYA
-baris dengan `status = 'ditampilkan'` (review yang disembunyikan Admin tidak
-ikut dihitung — logika ini sama persis dengan `getAverageRating()` yang sudah
-dipakai halaman Detail Produk). Produk tanpa review sama sekali -> rating
-`0` (Card menampilkan ⭐ 0.0).
-
-**Total Terjual** — jumlah `quantity` dari `order_items` yang `product_id`-nya
-cocok, HANYA untuk order dengan `status` `sudah_dibayar` atau `selesai`.
-Order dengan status `menunggu_pembayaran`, `dibatalkan`, `expired`, `diproses`,
-`dikemas`, `dikirim`, `refund`, maupun status pembayaran gagal TIDAK dihitung
-(sesuai permintaan). Produk yang belum pernah terjual -> `0` (Card
-menampilkan "Terjual 0").
-
-## Hasil Pengujian
-
-| # | Skenario | Hasil |
-|---|----------|-------|
-| 1 | Teks "Uniseks" tidak muncul lagi di Card Produk | ✅ Baris gender & fallback "Uniseks" dihapus dari `ProductCard.tsx` |
-| 2 | Rating produk tampil sesuai data review (hanya review `ditampilkan`) | ✅ `getAverageRatings()` diverifikasi filter `status = 'ditampilkan'`, dipasang di seluruh endpoint publik |
-| 3 | Total Terjual sesuai transaksi valid (`sudah_dibayar`/`selesai` saja) | ✅ `getSoldCounts()` diverifikasi filter status via join `orders!inner(status)` |
-| 4 | Produk tanpa review tetap rapi (⭐ 0.0) | ✅ Fallback `rating ?? 0` di `enrichProduct` + backend selalu mengirim `0` kalau tidak ada key rating |
-| 5 | Produk tanpa penjualan tampil "Terjual 0" | ✅ Fallback `totalTerjual ?? 0`, `formatSoldCount(0)` -> `"0"` |
-| 6 | Seluruh halaman yang memakai Card Produk konsisten | ✅ Semua memakai satu komponen `ProductCard` yang sama; data dipasok lewat `getProducts`/`getProductById`/`getProductBySlug` yang sama |
-| 7 | Responsive Desktop/Tablet/Mobile, teks tidak tumpuk/keluar Card | ✅ Baris Rating+Terjual pakai `flex items-center` + `truncate`, konsisten dengan pola elemen lain di Card yang sudah responsive |
-
-**Verifikasi teknis tambahan:**
-- `npx tsc --noEmit` pada seluruh project frontend: **0 error**.
-- `node --check` pada seluruh file backend yang diubah: **valid, tanpa syntax error**.
-- Tidak ada migration database yang diperlukan — seluruh data (rating, status
-  review, status order, quantity) sudah tersedia di skema yang sudah ada.
+**Validasi tambahan:**
+- Produk tanpa gender (array kosong) ditolak backend di level create & update
+  (400 Bad Request) — tidak mungkin tersimpan tanpa kategori gender.
+- `npx tsc --noEmit` di folder `frontend` dijalankan setelah seluruh
+  perubahan: **0 error**.
+- Migration database bersifat idempotent (aman dijalankan ulang) dan tidak
+  menghapus/mengubah data produk lain di luar kolom gender.

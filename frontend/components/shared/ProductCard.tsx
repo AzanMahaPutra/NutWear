@@ -9,6 +9,7 @@ import { RatingStars } from "@/components/ui/RatingStars";
 import { cn } from "@/utils/cn";
 import { enrichProduct } from "@/utils/enrichProduct";
 import { getSizeRangeLabel } from "@/utils/sizeRange";
+import { getGenderLabel, getPrimaryGender, shouldShowUniseksBadge } from "@/utils/gender";
 
 interface ProductCardProps {
   product: Product;
@@ -24,10 +25,16 @@ interface ProductCardProps {
  * `totalTerjual` SUDAH dihitung backend (lihat productService.attachRatingAndSold)
  * dari data Review & Order yang sesungguhnya.
  *
- * UPDATE — Card Produk: Rating & Total Terjual. Info gender ("Uniseks", dsb.)
- * sudah tidak ditampilkan lagi di Card Produk; digantikan Rating Produk +
- * Total Terjual yang jauh lebih berguna bagi calon pembeli. Urutan tampilan:
- * Gambar -> Pilihan Warna -> Rating + Total Terjual -> Nama Produk -> Harga.
+ * UPDATE — Card Produk: Rating & Total Terjual, berguna bagi calon pembeli.
+ *
+ * UPDATE — Gender Produk jadi Multi Select. Info gender ("Pria | S-3XL", dst.)
+ * dikembalikan ke Card Produk (bukan dihapus), digabung dengan rentang ukuran
+ * di baris yang sama. Kalau Admin memilih lebih dari satu gender, baris ini
+ * hanya menampilkan gender utama (prioritas Pria > Wanita > Uniseks, lihat
+ * utils/gender.ts) supaya Card tetap ringkas; kalau produk juga ditandai
+ * Uniseks selain Pria/Wanita, badge kecil "Uniseks" muncul di bawah harga.
+ * Urutan tampilan: Gambar -> Pilihan Warna -> Gender | Ukuran -> Rating +
+ * Total Terjual -> Nama Produk -> Harga (+ badge Uniseks bila ada).
  */
 export function ProductCard({ product: rawProduct, className }: ProductCardProps) {
   const product = enrichProduct(rawProduct);
@@ -35,6 +42,9 @@ export function ProductCard({ product: rawProduct, className }: ProductCardProps
   const colors = product.colors ?? [];
   const mainColor = colors[0];
   const sizeRangeLabel = getSizeRangeLabel(product.variants);
+  const genderLabel = getGenderLabel(getPrimaryGender(product.genders));
+  const genderSizeLabel = sizeRangeLabel ? `${genderLabel} | ${sizeRangeLabel}` : genderLabel;
+  const showUniseksBadge = shouldShowUniseksBadge(product.genders);
   const rating = product.rating ?? 0;
   const totalTerjual = product.totalTerjual ?? 0;
 
@@ -77,7 +87,7 @@ export function ProductCard({ product: rawProduct, className }: ProductCardProps
         </div>
       )}
 
-      {sizeRangeLabel && <p className="mb-1 text-xs text-neutral-500">{sizeRangeLabel}</p>}
+      <p className="mb-1 text-xs text-neutral-500">{genderSizeLabel}</p>
 
       <div className="mb-1 flex min-w-0 items-center gap-1.5">
         <RatingStars rating={rating} size="sm" />
@@ -99,6 +109,12 @@ export function ProductCard({ product: rawProduct, className }: ProductCardProps
           <span className="text-sm font-semibold text-neutral-900">{formatCurrency(product.harga)}</span>
         )}
       </div>
+
+      {showUniseksBadge && (
+        <span className="mt-1.5 inline-flex w-fit items-center rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[10px] font-medium text-neutral-600">
+          Uniseks
+        </span>
+      )}
     </Link>
   );
 }
