@@ -26,6 +26,14 @@ interface ProductShopViewProps {
   initialKategoriId?: string;
   /** true = filter New Arrival langsung aktif saat halaman Produk dibuka. */
   initialNewArrival?: boolean;
+  /**
+   * UPDATE — Grid Center Layout (halaman Kategori).
+   * true = grid produk otomatis berada di tengah kalau jumlah produk sedikit
+   * (1-3 produk), tanpa melebarkan ukuran Card. Dipakai khusus di halaman
+   * Kategori Detail (app/(shop)/kategori/[id]/page.tsx) supaya halaman Produk
+   * (yang juga memakai komponen ini) tidak ikut berubah tampilannya.
+   */
+  centerGrid?: boolean;
 }
 
 function toggleInArray(arr: string[], value: string) {
@@ -44,6 +52,7 @@ export function ProductShopView({
   initialSearch = "",
   initialKategoriId,
   initialNewArrival = false,
+  centerGrid = false,
 }: ProductShopViewProps) {
   const [filter, setFilter] = useState({
     ...DEFAULT_FILTER_STATE,
@@ -66,6 +75,18 @@ export function ProductShopView({
   const filtered = useFilteredProducts(products, filter);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // UPDATE — Grid Center Layout: kalau centerGrid aktif, grid dipakai lewat
+  // flexbox (bukan CSS grid) supaya baris yang belum penuh (1-3 Card) otomatis
+  // berada di tengah, tanpa Card ikut melebar. Lebar tiap Card dihitung manual
+  // supaya identik dengan lebar kolom grid asli (grid-cols-2 gap-x-6
+  // sm:grid-cols-4), jadi ukuran Card tidak berubah sama sekali — cuma posisi
+  // baris yang belum penuh yang jadi di tengah. Saat produk banyak (>=4 dan
+  // memenuhi baris), tampilannya identik dengan grid biasa.
+  const productGridClassName = centerGrid
+    ? "flex flex-wrap justify-center gap-x-6 gap-y-10"
+    : "grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4";
+  const productCardClassName = centerGrid ? "w-[calc(50%-0.75rem)] sm:w-[calc(25%-1.125rem)]" : undefined;
 
   function updateFilter<K extends keyof typeof filter>(key: K, value: (typeof filter)[K]) {
     setFilter((prev) => ({ ...prev, [key]: value }));
@@ -95,9 +116,11 @@ export function ProductShopView({
           </div>
 
           {isLoading ? (
-            <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4">
+            <div className={productGridClassName}>
               {Array.from({ length: 8 }).map((_, i) => (
-                <ProductCardSkeleton key={i} />
+                <div key={i} className={productCardClassName}>
+                  <ProductCardSkeleton />
+                </div>
               ))}
             </div>
           ) : paginated.length === 0 ? (
@@ -107,9 +130,9 @@ export function ProductShopView({
             />
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4">
+              <div className={productGridClassName}>
                 {paginated.map((product) => (
-                  <ProductCard key={product.id} product={product} />
+                  <ProductCard key={product.id} product={product} className={productCardClassName} />
                 ))}
               </div>
               <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />

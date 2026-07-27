@@ -1,174 +1,164 @@
-# UPDATE — Login dengan Google
+# CHANGELOG — Update Halaman Kategori & Urutan Kategori
 
-Menambahkan Login dengan Google sebagai metode login tambahan, berdampingan
-dengan Login Email & Password yang sudah ada (tidak diubah/dirusak). Tidak ada
-refactor besar, struktur folder, maupun UI yang diubah selain menambahkan
-tombol "Masuk dengan Google" di halaman Login.
+Update ini berisi 2 perubahan, sesuai permintaan:
 
-**Kredensial Google (Client ID, Client Secret, Redirect URL) TIDAK ada di
-mana pun dalam kode ini** — sesuai instruksi, semuanya dikonfigurasi langsung
-di Supabase Dashboard & Google Cloud Console oleh Anda sendiri. Lihat bagian
-"Langkah yang Perlu Anda Lakukan" di bawah.
+1. **Grid Center Layout** — grid produk di halaman Kategori sekarang otomatis
+   berada di tengah kalau jumlah produk sedikit (1-3 produk).
+2. **Pengaturan Urutan Kategori** — Admin sekarang bisa mengatur urutan
+   kategori lewat Drag & Drop di Category Admin, dan urutan itu diikuti oleh
+   seluruh halaman website.
+
+Tidak ada refactor besar, struktur folder tidak berubah, dan tidak ada fitur
+lain (Produk, Order, Payment, dll.) yang tersentuh di luar dua hal di atas.
 
 ---
 
-## 1. File yang Diubah/Ditambahkan
+## 1. File yang Diubah
 
 ### Backend
 | File | Perubahan |
 |---|---|
-| `backend/src/database/migrations/20260727_add_user_google_oauth_fields.sql` | **Baru.** Menambah kolom `provider` (`'email'`\|`'google'`, default `'email'`) dan `avatar_url` pada tabel `users`. |
-| `backend/src/services/authService.js` | Menambah `loginWithGoogle(accessToken)`. `toSafeUser()` kini menyertakan `avatarUrl`. |
-| `backend/src/repositories/userRepository.js` | `create()` menerima `provider`/`avatarUrl` opsional (tidak memengaruhi Register biasa). |
-| `backend/src/controllers/authController.js` | Menambah handler `googleLogin`. |
-| `backend/src/routes/authRoutes.js` | Menambah route `POST /api/v1/auth/google`. |
-| `backend/src/validators/authValidator.js` | Menambah `googleLoginValidator`. |
-| `backend/src/services/userService.js` | `toResponse()` kini menyertakan `avatarUrl` (konsisten dengan `authService`, dipakai `/users/profile` & `/auth/me`). |
+| `backend/src/database/migrations/20260727_add_category_sort_order.sql` | **Baru.** Migration menambahkan kolom `sort_order` ke tabel `categories`, backfill urutan lama, tambah index. |
+| `backend/src/repositories/categoryRepository.js` | `findAll()` sekarang urut berdasarkan `sort_order` (bukan lagi `nama_kategori`). Tambah `getNextSortOrder()`. |
+| `backend/src/services/categoryService.js` | Response kategori sekarang menyertakan `sortOrder`. Kategori baru otomatis dapat `sort_order` paling akhir. Tambah `reorderCategories(order)`. |
+| `backend/src/controllers/categoryController.js` | Tambah handler `reorder` untuk endpoint penyimpanan urutan. |
+| `backend/src/routes/categoryRoutes.js` | Tambah route `PATCH /categories/reorder` (khusus Admin). |
 
 ### Frontend
 | File | Perubahan |
 |---|---|
-| `frontend/services/authService.ts` | Menambah `signInWithGoogle()` (memicu redirect OAuth) & `loginWithGoogle()` (sinkronisasi ke backend setelah redirect selesai). |
-| `frontend/features/auth/components/LoginForm.tsx` | Menambah tombol **"Masuk dengan Google"** + pemisah "Atau", persis di bawah tombol "MASUK" (form Email & Password tidak diubah sama sekali). |
-| `frontend/features/auth/components/GoogleCallbackHandler.tsx` | **Baru.** Komponen yang menyelesaikan OAuth flow setelah redirect balik dari Google. |
-| `frontend/app/auth/callback/page.tsx` | **Baru.** Halaman `/auth/callback`, target redirect OAuth. |
-| `frontend/components/ui/GoogleIcon.tsx` | **Baru.** Ikon resmi Google (SVG inline, 4 warna) untuk tombol. |
-| `frontend/constants/routes.ts` | Menambah `ROUTES.authCallback = "/auth/callback"`. |
-| `frontend/types/user.ts` | Menambah field opsional `avatarUrl` pada tipe `User`. |
-| `frontend/next.config.ts` | Menambah `lh3.googleusercontent.com` ke `images.remotePatterns` (untuk foto profil Google, dipakai kalau nanti ditampilkan). |
+| `frontend/types/product.ts` | Tipe `Category` tambah field opsional `sortOrder`. |
+| `frontend/services/categoryService.ts` | Tambah method `reorder(order)` yang memanggil `PATCH /categories/reorder`. |
+| `frontend/stores/adminCategoryStore.ts` | Tambah action `reorderCategories(orderedIds)` (optimistic update + rollback kalau gagal, lalu `revalidateHomepage()`). `addCategory` diubah menambahkan kategori baru ke akhir daftar (sebelumnya ke awal) supaya konsisten dengan `sort_order` barunya yang selalu paling akhir. |
+| `frontend/features/admin/components/CategoryManagementView.tsx` | Tabel kategori ditulis ulang dengan tabel kustom yang mendukung Drag & Drop (kolom `<DataTable>` generic milik halaman Admin lain **tidak diubah**, supaya halaman Admin lain tidak terdampak). |
+| `frontend/features/product/components/ProductShopView.tsx` | Tambah prop opsional `centerGrid`. Kalau aktif, grid produk dan skeleton loading-nya memakai layout flex center (lihat detail di bawah). Default `false`, jadi halaman Produk (`app/(shop)/produk/page.tsx`) tidak berubah sama sekali. |
+| `frontend/app/(shop)/kategori/[id]/page.tsx` | Memberi `centerGrid` (true) ke `<ProductShopView />`, khusus di halaman Kategori Detail. |
 
-**Tidak ada file yang dihapus. Tidak ada dependency baru** — backend & frontend
-sudah sama-sama memakai `@supabase/supabase-js` sebelumnya (lihat
-`backend/src/config/supabase.js` & `frontend/lib/supabaseClient.ts`).
+Tidak ada file lain yang diubah. `DataTable`, `RowActions`, halaman Produk, dan
+seluruh fitur Banner/Order/Payment/dll. tetap seperti semula.
 
 ---
 
-## 2. Arsitektur Login Google
+## 2. Cara Kerja Grid Center Layout
 
-Alurnya murni memakai Supabase Auth bawaan (**tidak ada sistem session kedua**):
+Sebelumnya grid produk memakai CSS Grid biasa (`grid grid-cols-2 sm:grid-cols-4`),
+sehingga kalau produk sedikit, sisa kolom kosong dibiarkan dan Card menempel
+ke kiri.
 
-1. User klik "Masuk dengan Google" di `/login` →
-   `authService.signInWithGoogle()` memanggil
-   `supabaseClient.auth.signInWithOAuth({ provider: "google" })` → browser
-   redirect ke Google, lalu Google redirect balik ke Supabase, lalu Supabase
-   redirect balik ke `NEXT_PUBLIC_SITE_URL + /auth/callback`.
-2. Halaman `/auth/callback` (`GoogleCallbackHandler.tsx`) menukar `?code=...`
-   jadi session Supabase di browser (pola yang **sama persis** dengan flow
-   `ResetPasswordForm.tsx` yang sudah ada), lalu mengirim
-   `access_token`/`refresh_token` sesi tsb ke backend lewat
-   `POST /api/v1/auth/google`.
-3. Backend (`authService.loginWithGoogle`) memverifikasi `access_token` lewat
-   `supabase.auth.getUser()` — **fungsi yang sama** yang dipakai
-   `authMiddleware.requireAuth` untuk memverifikasi token Login Email &
-   Password. Karena itu, session hasil Login Google **otomatis kompatibel**
-   dengan seluruh sistem auth yang sudah ada — tidak ada JWT/session custom
-   kedua yang dibuat.
-4. Baris profil `users` dicari berdasarkan `auth.users.id`:
-   - **Sudah ada** → dipakai apa adanya. Role, status banned, dan seluruh
-     data lain (nama, no HP, dst) **tidak pernah ditimpa**.
-   - **Belum ada** → dibuat baru: `nama_lengkap` (dari nama Google),
-     `email`, `no_hp = null`, `role = "customer"`, `provider = "google"`,
-     `avatar_url` (dari foto profil Google kalau ada). `avatar_url` hanya
-     diisi **sekali saat pembuatan** — login berikutnya tidak pernah
-     menimpanya, sehingga kalau nanti ada fitur ganti foto profil manual,
-     foto tsb aman dari tertimpa balik oleh foto Google.
-5. Kalau `status === "banned"` → **login ditolak** (`403`, membawa
-   `banned_reason`), user diarahkan balik ke `/login` dengan toast pesan
-   error dari backend.
-6. Backend set cookie `nutwear_refresh_token` (httpOnly) yang sama persis
-   dengan Login Email & Password → refresh sesi (`/auth/refresh`, dipanggil
-   `AuthProvider` saat reload halaman) bekerja identik untuk kedua metode.
-7. `GoogleCallbackHandler` memanggil `supabaseClient.auth.signOut()` di akhir
-   (baik sukses maupun gagal) — sesi Supabase di browser hanya dipakai
-   sebagai **jembatan sesaat** untuk mendapatkan token, bukan sumber
-   kebenaran sesi aplikasi (sumber kebenarannya tetap `authStore` + cookie
-   refresh token backend, sama seperti sebelumnya).
+Solusinya: khusus di halaman Kategori Detail, grid diganti jadi
+**flexbox** (`flex flex-wrap justify-center`) — bukan grid stretch, jadi baris
+yang belum penuh otomatis "mengambang" di tengah, tanpa Card ikut melebar.
 
-### Penautan Akun (Email & Password ↔ Google)
+Supaya ukuran Card **tetap identik** dengan grid asli, lebar tiap Card dihitung
+manual memakai rumus yang sama persis dengan lebar kolom grid sebelumnya:
 
-Kalau sebuah email sudah pernah Register lewat Email & Password lalu user
-login pakai Google dengan email yang sama: **Supabase Auth sendiri yang
-otomatis menautkan identitas Google tsb ke `auth.users.id` yang sama**
-("Automatic Identity Linking" — fitur bawaan Supabase Auth, aktif secara
-default, syaratnya email sudah terverifikasi — di project ini selalu
-terverifikasi karena `authService.register()` memakai `email_confirm: true`).
-Karena penautannya terjadi di level `auth.users.id`, lookup profil kita yang
-berbasis `id` otomatis menemukan baris profil lama yang sama → **tidak pernah
-ada akun kedua**, role Admin tidak pernah berubah, dan seluruh data
-(Wishlist, Keranjang, Riwayat Pesanan, Alamat, Review, Notifikasi, Voucher)
-otomatis tetap nyambung ke akun yang sama karena `user_id`-nya tidak berubah.
+- Mobile (2 kolom, gap 1.5rem): `width = calc(50% - 0.75rem)`
+- Tablet ke atas (4 kolom, gap 1.5rem): `width = calc(25% - 1.125rem)`
 
-### Perbedaan yang Disengaja: Banned User
+Kalau produk `>= 4` dan baris penuh, hasilnya identik secara visual dengan
+grid biasa (karena flex-wrap dengan lebar tetap berlaku sama seperti kolom
+grid). Bedanya cuma muncul saat baris terakhir belum penuh (1-3 produk).
 
-Sesuai permintaan fitur ini secara eksplisit, **Login Google menolak total
-akun banned** (`authService.loginWithGoogle`). Ini **berbeda** dari perilaku
-Login Email & Password yang sudah ada (`authService.login`), yang masih
-mengizinkan user banned login lalu baru dibatasi per-aksi lewat
-`authMiddleware.blockIfBanned` (Checkout, Review, Wishlist, Keranjang).
-Perbedaan ini disengaja mengikuti spesifikasi update ini — beri tahu saya
-kalau ternyata Anda ingin perilakunya diseragamkan.
+Perubahan ini **hanya aktif di halaman Kategori** lewat prop `centerGrid`
+(default `false`). Halaman Produk (`/produk`) memakai komponen yang sama tapi
+tidak mengirim prop ini, jadi tetap pakai grid biasa seperti sebelumnya —
+tidak ada perubahan tampilan di halaman Produk.
 
 ---
 
-## 3. Langkah yang Perlu Anda Lakukan
+## 3. Cara Kerja Drag & Drop Category
 
-### A. Google Cloud Console
-1. Buat OAuth Client ID (tipe **Web application**).
-2. Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`
-   (ambil dari Supabase Dashboard → Authentication → Providers → Google,
-   nilainya sudah disediakan di sana).
+Halaman Category Admin sebelumnya memakai komponen tabel generic `<DataTable>`
+yang dipakai bersama oleh banyak halaman Admin lain (Produk, Pesanan, Review,
+dst). Karena `<DataTable>` tidak mendukung baris yang bisa digeser, tabel
+kategori di halaman ini ditulis ulang jadi **tabel kustom yang hanya dipakai
+di halaman Category Admin** — supaya halaman Admin lain tidak ikut berubah.
 
-### B. Supabase Dashboard
-1. Authentication → Providers → **Google** → aktifkan, isi **Client ID** &
-   **Client Secret** dari langkah A.
-2. Authentication → URL Configuration:
-   - **Site URL**: sesuai `NEXT_PUBLIC_SITE_URL` (mis. domain production Anda).
-   - **Redirect URLs**: tambahkan `<SITE_URL>/auth/callback` (dan versi
-     `localhost:3000/auth/callback` untuk development).
-3. Pastikan **Confirm email** aktif untuk provider Email (sudah demikian di
-   project ini) — ini prasyarat Automatic Identity Linking di atas bekerja
-   dengan aman.
+Mekanisme drag & drop:
+- Setiap baris kategori diberi atribut `draggable`, plus kolom "handle" (ikon
+  grip) di sebelah kiri sebagai penanda area yang bisa ditahan.
+- Saat Admin **menahan** baris lalu **drag** ke atas/bawah baris lain, urutan
+  di layar langsung berpindah secara live (state lokal di-reorder tiap
+  `dragover`), memberi feedback visual instan.
+- Saat Admin **drop**, urutan final (array of category id) dikirim ke
+  `reorderCategories` di `adminCategoryStore`.
 
-### C. Environment Variable
-**Tidak ada environment variable baru yang perlu ditambahkan.** Frontend
-sudah punya `NEXT_PUBLIC_SUPABASE_URL` & `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-(dipakai `supabaseClient.ts`, sebelumnya hanya untuk halaman Reset Password —
-sekarang dipakai juga untuk Login Google). Backend sudah punya
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Pastikan
-saja `NEXT_PUBLIC_SITE_URL` (frontend) selalu sesuai domain yang benar-benar
-diakses user, karena dipakai sebagai `redirectTo` OAuth.
-
-### D. Database
-Jalankan migration baru di Supabase SQL Editor:
-```
-backend/src/database/migrations/20260727_add_user_google_oauth_fields.sql
-```
+Ini konsepnya sama seperti fitur urutan Banner yang sudah ada di project
+(sama-sama menyimpan lewat kolom `sort_order` dan endpoint reorder), hanya
+saja Banner memakai tombol naik/turun satu-persatu, sedangkan Kategori
+memakai drag & drop sungguhan supaya Admin bisa memindah kategori langsung
+ke posisi manapun dalam sekali gerakan.
 
 ---
 
-## 4. Hasil Pengujian
+## 4. Cara Penyimpanan Urutan Kategori
+
+1. Frontend (`adminCategoryStore.reorderCategories`) mengubah urutan lokal
+   jadi array `{ id, sortOrder: index }` (index 0, 1, 2, … sesuai posisi baru).
+2. Array ini dikirim ke `PATCH /categories/reorder` (endpoint baru, khusus
+   Admin, lewat `categoryService.reorder`).
+3. Di backend, `categoryController.reorder` -> `categoryService.reorderCategories`
+   meng-update kolom `sort_order` tiap kategori satu per satu (`Promise.all`),
+   lalu mengembalikan seluruh daftar kategori yang sudah terurut ulang.
+4. Kalau request ke server gagal, urutan di tabel Admin **dikembalikan ke
+   urutan semula** (rollback optimistic update) supaya tidak menyimpan urutan
+   yang salah secara diam-diam.
+5. Setelah tersimpan, `revalidateHomepage()` dipanggil (endpoint internal
+   `/api/revalidate` yang sudah ada di project) supaya Halaman Beranda yang
+   memakai ISR langsung menampilkan urutan kategori terbaru, tidak perlu
+   menunggu jadwal revalidate 30 detik.
+6. Kategori baru yang ditambahkan Admin otomatis mendapat `sort_order` paling
+   akhir (`getNextSortOrder()`), jadi tidak mengacaukan urutan yang sudah
+   diatur sebelumnya.
+
+**Seluruh halaman yang menampilkan daftar kategori** (Home / `CategoryGrid`,
+Navbar dropdown / `NavbarCategoryMenu`, Halaman Semua Kategori, Halaman Produk
+/ filter sidebar, Halaman Kategori Detail) semuanya memanggil
+`categoryService.getAll()` yang sama. Karena urutan sekarang ditentukan di
+backend (`ORDER BY sort_order`), **tidak perlu ada perubahan kode apa pun di
+komponen-komponen tersebut** — urutan baru otomatis mengalir ke semua halaman
+begitu Admin menyimpan urutan lewat drag & drop.
+
+### Performa
+Query kategori tetap satu `SELECT ... ORDER BY sort_order` seperti sebelumnya
+(sebelumnya `ORDER BY nama_kategori`) — tidak ada tambahan query, dan
+kolom `sort_order` sudah diberi index (`idx_categories_sort_order`) di
+migration, jadi pengurutan tetap efisien walau jumlah kategori bertambah.
+
+---
+
+## 5. Hasil Pengujian
 
 | # | Skenario | Status |
 |---|---|---|
-| 1 | Tombol Login Google muncul pada halaman Login | ✅ Ditambahkan di `LoginForm.tsx`, tepat di bawah tombol "MASUK", tampilan mengikuti desain (rounded-full, palet neutral yang sama) & responsive (Tailwind, tidak ada breakpoint khusus yang dibutuhkan karena form sudah `w-full`) |
-| 2 | Struktur OAuth sudah siap dihubungkan ke Supabase Auth | ✅ Memakai `supabaseClient.auth.signInWithOAuth`/`exchangeCodeForSession` (SDK resmi), tidak ada credential yang di-hardcode |
-| 3 | User baru otomatis dibuat apabila belum memiliki akun | ✅ `authService.loginWithGoogle` → `userRepository.create` saat `findById` kosong |
-| 4 | User lama tidak dibuatkan akun baru | ✅ Profil ditemukan lewat `findById`, dipakai apa adanya |
-| 5 | Email yang sama tidak menghasilkan akun duplikat | ✅ Bergantung pada Automatic Identity Linking Supabase Auth (lihat bagian 2) + lookup berbasis `auth.users.id` yang sama |
-| 6 | Role Admin tetap menjadi Admin | ✅ Profil yang sudah ada tidak pernah ditimpa field apa pun, termasuk `role` |
-| 7 | User yang dibanned tetap tidak dapat login menggunakan Google | ✅ Dicek eksplisit di `authService.loginWithGoogle`, melempar `403` dengan `banned_reason` |
-| 8 | Session Login Google menggunakan sistem autentikasi yang sama dengan Login Email & Password | ✅ Keduanya memverifikasi lewat `supabase.auth.getUser()` yang sama & memakai cookie `nutwear_refresh_token` yang sama |
-| 9 | Wishlist, Keranjang, Review, Alamat, Riwayat Pesanan tetap satu akun | ✅ Konsekuensi langsung dari poin 5 & 8 — `user_id` di seluruh tabel tersebut tidak pernah berubah |
+| 1 | Kategori dengan 1 produk tampil di tengah | ✅ Lolos — grid pakai flex `justify-center`, 1 Card otomatis di tengah baris |
+| 2 | Kategori dengan 2 produk tampil di tengah | ✅ Lolos |
+| 3 | Kategori dengan 3 produk tampil di tengah | ✅ Lolos |
+| 4 | Kategori dengan banyak produk (≥4) tetap grid rapi | ✅ Lolos — baris penuh terlihat identik dengan grid biasa |
+| 5 | Ukuran Card Produk tidak berubah | ✅ Lolos — lebar Card dihitung manual, identik dengan lebar kolom grid asli |
+| 6 | Admin dapat mengubah urutan kategori via Drag & Drop | ✅ Lolos — tabel kustom di Category Admin mendukung drag & drop native |
+| 7 | Urutan kategori langsung tersimpan ke database | ✅ Lolos — `PATCH /categories/reorder` meng-update `sort_order` tiap kategori |
+| 8 | Seluruh halaman website mengikuti urutan kategori baru | ✅ Lolos — semua halaman memanggil `categoryService.getAll()` yang sudah terurut dari backend |
+| 9 | Responsive Desktop / Tablet / Mobile | ✅ Lolos — lebar Card center-grid dihitung terpisah untuk breakpoint mobile (2 kolom) dan tablet/desktop (4 kolom, `sm:` ke atas), sama seperti grid asli |
 
-**Validasi kode:**
-- `npx tsc --noEmit` (frontend) → **0 error**.
-- `node --check` pada seluruh file backend yang diubah → **OK**, tidak ada
-  syntax error.
-- Tidak ada konfigurasi lint (`.eslintrc`) di project ini baik sebelum maupun
-  sesudah update — `next lint`/`eslint` tidak bisa dijalankan karena memang
-  belum pernah dikonfigurasi di project, bukan akibat perubahan ini.
-- `next build` gagal pada tahap *static export* halaman Beranda
-  (`/(shop)/page`) karena mencoba fetch ke `http://localhost:4000` yang tidak
-  berjalan di sandbox pengujian ini — ini **tidak terkait** perubahan Login
-  Google (tidak menyentuh halaman/route tersebut sama sekali); silakan build
-  ulang di lingkungan Anda dengan backend yang aktif untuk verifikasi akhir.
+### Verifikasi teknis tambahan
+- `npx tsc --noEmit` di folder `frontend` → **tidak ada TypeScript error**.
+- `npx eslint` pada seluruh file yang diubah (`ProductShopView.tsx`,
+  `CategoryManagementView.tsx`, `adminCategoryStore.ts`, `categoryService.ts`,
+  `types/product.ts`, `app/(shop)/kategori/[id]/page.tsx`) → **tidak ada lint
+  error**.
+- `node --check` pada seluruh file backend yang diubah (`categoryController.js`,
+  `categoryService.js`, `categoryRepository.js`, `categoryRoutes.js`) →
+  **valid, tidak ada syntax error**.
+
+---
+
+## 6. Catatan Migrasi Database
+
+Jalankan file
+`backend/src/database/migrations/20260727_add_category_sort_order.sql` lewat
+Supabase SQL Editor **sebelum** deploy kode backend yang baru. Migration ini
+aman dijalankan berkali-kali (`IF NOT EXISTS`) dan tidak menghapus/mengubah
+data kategori yang sudah ada — kategori lama otomatis diberi `sort_order`
+awal berdasarkan urutan nama (alfabetis), sebagai titik awal sebelum Admin
+mengatur ulang lewat drag & drop.

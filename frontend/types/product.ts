@@ -70,6 +70,8 @@ export interface Category {
   namaKategori: string;
   /** URL gambar kategori dari Supabase Storage (null = belum ada gambar). */
   imageUrl?: string | null;
+  /** Urutan tampil kategori di website, diatur Admin lewat drag & drop di Category Admin. */
+  sortOrder?: number;
   createdAt?: string;
 }
 

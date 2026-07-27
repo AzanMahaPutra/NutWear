@@ -31,7 +31,7 @@ export default async function KategoriDetailPage({ params }: KategoriDetailPageP
   return (
     <Container className="pt-8">
       <h1 className="mb-6 text-center text-3xl font-bold text-neutral-900">{category.namaKategori}</h1>
-      <ProductShopView products={products} categories={categories} />
+      <ProductShopView products={products} categories={categories} centerGrid />
     </Container>
   );
 }

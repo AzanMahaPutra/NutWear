@@ -41,4 +41,10 @@ export const categoryService = {
   async remove(id: string) {
     await apiClient.delete(`/categories/${id}`);
   },
+
+  /** Simpan urutan kategori baru hasil drag & drop di Category Admin. */
+  async reorder(order: { id: string; sortOrder: number }[]) {
+    const { data } = await apiClient.patch<ApiResponse<Category[]>>("/categories/reorder", { order });
+    return data.data;
+  },
 };
