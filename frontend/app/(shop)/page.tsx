@@ -52,7 +52,8 @@ export const revalidate = 30;
  * Produk Rekomendasi yang tampil di section ini.
  */
 export default async function HomePage() {
-  const [{ items: products }, { items: recommendedProducts }, banners, heroBanners] = await Promise.all([
+  const [{ items: newArrivalProducts }, { items: allProducts }, { items: recommendedProducts }, banners, heroBanners] = await Promise.all([
+    productService.getAll({ pageSize: 12, newArrival: true }),
     productService.getAll({ pageSize: 12 }),
     // BUG FIX — Produk Rekomendasi: request terpisah dengan filter is_recommended,
     // BUKAN memakai ulang `products` di atas seperti sebelumnya.
@@ -77,8 +78,8 @@ export default async function HomePage() {
         </div>
       )}
 
-      <ProductRail title="Produk Terbaru" products={products} />
-      <ProductRail title="Produk Terlaris" products={products} />
+      <ProductRail title="Produk Terbaru" products={newArrivalProducts} emptyMessage="Belum ada produk terbaru." />
+      <ProductRail title="Produk Terlaris" products={allProducts} />
       <ProductRail
         title="Produk Rekomendasi"
         products={recommendedProducts}

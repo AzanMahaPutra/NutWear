@@ -10,6 +10,7 @@ interface GetProductsParams {
   /** BUG FIX — Produk Rekomendasi: true untuk mengambil hanya produk yang ditandai
    * Admin sebagai Produk Rekomendasi (filter dilakukan di backend, bukan di sini). */
   recommended?: boolean;
+  newArrival?: boolean;
 }
 
 interface ProductListMeta {
