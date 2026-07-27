@@ -17,6 +17,7 @@ interface AdminProductState {
     berat: number;
     deskripsi: string;
     isNewArrival?: boolean;
+    isRecommended?: boolean;
     genders: ("pria" | "wanita" | "uniseks")[];
     detailInfo?: string;
     materialCareInfo?: string;

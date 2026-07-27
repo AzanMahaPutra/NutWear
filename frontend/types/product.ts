@@ -95,6 +95,9 @@ export interface Product {
   isPromoActive?: boolean;
   /** Status New Arrival, dikontrol admin di halaman Edit Produk. */
   isNewArrival?: boolean;
+  /** BUG FIX — Status Produk Rekomendasi, dikontrol admin di halaman Tambah/Edit Produk.
+   * Hanya produk dengan nilai true yang tampil di section "Produk Rekomendasi" Beranda. */
+  isRecommended?: boolean;
   /**
    * Target gender produk (Multi Select) — Admin bisa memilih lebih dari satu
    * kategori sekaligus (mis. Pria + Uniseks) lewat Checkbox di form Produk.

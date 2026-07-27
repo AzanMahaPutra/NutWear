@@ -31,6 +31,9 @@ const productSchema = z.object({
   berat: z.coerce.number().min(1, "Berat wajib diisi"),
   deskripsi: z.string().min(10, "Deskripsi minimal 10 karakter"),
   isNewArrival: z.boolean().optional(),
+  // BUG FIX — Produk Rekomendasi: flag terpisah dari New Arrival, dipakai section
+  // "Produk Rekomendasi" di Beranda (hanya menampilkan produk dengan nilai true).
+  isRecommended: z.boolean().optional(),
   // UPDATE — Gender Produk jadi Multi Select. Admin bisa memilih lebih dari satu
   // kategori sekaligus lewat Checkbox; minimal satu wajib dipilih.
   genders: z.array(z.enum(["pria", "wanita", "uniseks"])).min(1, "Minimal satu gender wajib dipilih"),
@@ -88,13 +91,14 @@ export function ProductForm({ initialData, onSuccess }: ProductFormProps) {
           berat: initialData.berat,
           deskripsi: initialData.deskripsi,
           isNewArrival: initialData.isNewArrival ?? false,
+          isRecommended: initialData.isRecommended ?? false,
           genders: initialData.genders && initialData.genders.length > 0 ? initialData.genders : ["uniseks"],
           detailInfo: initialData.detailInfo ?? "",
           materialCareInfo: initialData.materialCareInfo ?? "",
           shippingReturnInfo: initialData.shippingReturnInfo ?? "",
           productionInfo: initialData.productionInfo ?? "",
         }
-      : { hargaPromoColor: "#dc2626", isNewArrival: false, genders: ["uniseks"] },
+      : { hargaPromoColor: "#dc2626", isNewArrival: false, isRecommended: false, genders: ["uniseks"] },
   });
 
   const selectedGenders = watch("genders") ?? [];
@@ -200,6 +204,15 @@ export function ProductForm({ initialData, onSuccess }: ProductFormProps) {
             <label className="flex h-[52px] w-full cursor-pointer items-center gap-2.5 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3.5 text-sm font-semibold text-neutral-800">
               <input type="checkbox" {...register("isNewArrival")} className="h-4 w-4 shrink-0 rounded border-neutral-300" />
               Tandai sebagai New Arrival
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* BUG FIX — Produk Rekomendasi: flag terpisah dari New Arrival, dipakai
+                section "Produk Rekomendasi" di Beranda. */}
+            <label className="flex h-[52px] w-full cursor-pointer items-center gap-2.5 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3.5 text-sm font-semibold text-neutral-800">
+              <input type="checkbox" {...register("isRecommended")} className="h-4 w-4 shrink-0 rounded border-neutral-300" />
+              Tandai sebagai Produk Rekomendasi
             </label>
           </div>
 

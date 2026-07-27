@@ -7,6 +7,9 @@ interface GetProductsParams {
   search?: string;
   page?: number;
   pageSize?: number;
+  /** BUG FIX — Produk Rekomendasi: true untuk mengambil hanya produk yang ditandai
+   * Admin sebagai Produk Rekomendasi (filter dilakukan di backend, bukan di sini). */
+  recommended?: boolean;
 }
 
 interface ProductListMeta {
@@ -82,6 +85,7 @@ export const productService = {
     berat: number;
     deskripsi: string;
     isNewArrival?: boolean;
+    isRecommended?: boolean;
     genders: ("pria" | "wanita" | "uniseks")[];
   }) {
     const { data } = await apiClient.post<ApiResponse<Product>>("/products", payload);
@@ -102,6 +106,7 @@ export const productService = {
       deskripsi: string;
       isActive: boolean;
       isNewArrival: boolean;
+      isRecommended: boolean;
       genders: ("pria" | "wanita" | "uniseks")[];
     }>
   ) {

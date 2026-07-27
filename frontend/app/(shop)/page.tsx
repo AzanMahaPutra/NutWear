@@ -39,14 +39,24 @@ export const revalidate = 30;
  * Catatan jujur soal keterbatasan data publik:
  * Backend tidak memiliki endpoint publik "produk terlaris" (agregasi penjualan
  * hanya tersedia di Admin Dashboard API yang butuh auth admin). Karena itu,
- * "Produk Terbaru" diurutkan dari created_at, sedangkan "Produk Terlaris" dan
- * "Produk Rekomendasi" untuk saat ini menampilkan katalog yang sama dengan
- * urutan berbeda. Ini bisa ditingkatkan nanti dengan endpoint publik
- * `/products?sort=terlaris` di backend tanpa mengubah struktur halaman ini.
+ * "Produk Terbaru" diurutkan dari created_at, sedangkan "Produk Terlaris" untuk
+ * saat ini masih menampilkan katalog yang sama. Ini bisa ditingkatkan nanti
+ * dengan endpoint publik `/products?sort=terlaris` di backend tanpa mengubah
+ * struktur halaman ini.
+ *
+ * BUG FIX — "Produk Rekomendasi" SEBELUMNYA ikut memakai `products` yang sama
+ * di atas (bug: section itu jadi identik dengan halaman Semua Produk). Sekarang
+ * diambil lewat request terpisah dengan filter `recommended: true`, yang benar-
+ * benar difilter di backend (`is_recommended = true`, lihat
+ * productRepository.findAll), sehingga hanya produk yang ditandai Admin sebagai
+ * Produk Rekomendasi yang tampil di section ini.
  */
 export default async function HomePage() {
-  const [{ items: products }, banners, heroBanners] = await Promise.all([
+  const [{ items: products }, { items: recommendedProducts }, banners, heroBanners] = await Promise.all([
     productService.getAll({ pageSize: 12 }),
+    // BUG FIX — Produk Rekomendasi: request terpisah dengan filter is_recommended,
+    // BUKAN memakai ulang `products` di atas seperti sebelumnya.
+    productService.getAll({ pageSize: 12, recommended: true }),
     bannerService.getAll({ activeOnly: true }).catch(() => []),
     heroBannerService.getAll({ activeOnly: true }).catch(() => []),
   ]);
@@ -69,7 +79,11 @@ export default async function HomePage() {
 
       <ProductRail title="Produk Terbaru" products={products} />
       <ProductRail title="Produk Terlaris" products={products} />
-      <ProductRail title="Produk Rekomendasi" products={products} />
+      <ProductRail
+        title="Produk Rekomendasi"
+        products={recommendedProducts}
+        emptyMessage="Belum ada produk rekomendasi."
+      />
     </>
   );
 }

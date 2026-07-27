@@ -37,6 +37,9 @@ function toResponse(product) {
     // menampilkan status promo yang konsisten dan sudah tervalidasi periode aktifnya.
     isPromoActive: promo.isPromoActive(product),
     isNewArrival: product.is_new_arrival ?? false,
+    // BUG FIX — Produk Rekomendasi: dipakai Admin Form (toggle) dan Beranda
+    // (menampilkan hanya produk dengan nilai true di section Produk Rekomendasi).
+    isRecommended: product.is_recommended ?? false,
     genders: Array.isArray(product.genders) && product.genders.length > 0 ? product.genders : ["uniseks"],
     deskripsi: product.deskripsi,
     berat: product.berat,
@@ -140,8 +143,8 @@ async function attachRatingAndSold(items) {
   }));
 }
 
-async function getProducts({ categoryId, search, page, pageSize }) {
-  const { data, total } = await productRepository.findAll({ categoryId, search, page, pageSize });
+async function getProducts({ categoryId, search, page, pageSize, recommended }) {
+  const { data, total } = await productRepository.findAll({ categoryId, search, page, pageSize, recommended });
   const items = await attachRatingAndSold(data.map(toResponse));
   return {
     items,
@@ -172,7 +175,11 @@ async function createProduct(payload) {
   const response = toResponse(product);
   // Update 1 — Notifikasi New Arrival/Promo saat produk baru langsung dibuat dengan status tsb.
   // Jangan sampai kegagalan pengiriman notifikasi menggagalkan pembuatan produk itu sendiri.
-  if (response.isNewArrival) notificationService.notifyNewArrival(response).catch(() => {});
+  if (response.isNewArrival) {
+    notificationService
+      .notifyNewArrival(response)
+      .catch((err) => console.error(`[createProduct] Gagal mengirim notifikasi New Arrival untuk produk ${response.id}:`, err));
+  }
   if (response.hargaPromo != null) notificationService.notifyPromo(response).catch(() => {});
   return response;
 }
@@ -198,6 +205,7 @@ async function updateProduct(id, payload) {
     ...(payload.promoMulai !== undefined && { promo_mulai: payload.promoMulai || null }),
     ...(payload.promoSelesai !== undefined && { promo_selesai: payload.promoSelesai || null }),
     ...(typeof payload.isNewArrival === "boolean" && { is_new_arrival: payload.isNewArrival }),
+    ...(typeof payload.isRecommended === "boolean" && { is_recommended: payload.isRecommended }),
     ...(normalizedGenders && { genders: normalizedGenders }),
     ...(payload.deskripsi && { deskripsi: payload.deskripsi }),
     ...(payload.berat !== undefined && { berat: payload.berat }),
@@ -214,7 +222,9 @@ async function updateProduct(id, payload) {
   // Update 1 — Notifikasi New Arrival: hanya saat transisi false -> true, supaya tidak
   // mengirim ulang notifikasi yang sama di setiap kali admin menyimpan perubahan lain.
   if (!before.isNewArrival && response.isNewArrival) {
-    notificationService.notifyNewArrival(response).catch(() => {});
+    notificationService
+      .notifyNewArrival(response)
+      .catch((err) => console.error(`[updateProduct] Gagal mengirim notifikasi New Arrival untuk produk ${response.id}:`, err));
   }
 
   // Update 1 — Notifikasi Promo Produk: hanya saat harga promo/periode promo benar-benar
