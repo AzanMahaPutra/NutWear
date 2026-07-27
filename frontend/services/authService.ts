@@ -69,6 +69,7 @@ export const authService = {
   async logout() {
     try {
       await apiClient.post("/auth/logout");
+      await supabaseClient.auth.signOut().catch(() => {});
     } finally {
       // Access token in-memory harus hilang walaupun request ke server gagal
       // (mis. sudah offline/token sudah invalid) — sesi di sisi client tidak boleh

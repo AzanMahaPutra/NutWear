@@ -64,11 +64,8 @@ export function GoogleCallbackHandler() {
       } catch (err) {
         setStatus("error");
         showToast(getApiErrorMessage(err, "Login dengan Google gagal, silakan coba lagi"), "error");
-        router.replace(ROUTES.login);
-      } finally {
-        // Sesi Supabase di browser ini hanya jembatan sesaat (lihat komentar di atas),
-        // selalu dibersihkan baik berhasil maupun gagal supaya tidak tertinggal.
         await supabaseClient.auth.signOut().catch(() => {});
+        router.replace(ROUTES.login);
       }
     }
 
