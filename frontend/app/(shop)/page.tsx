@@ -36,25 +36,33 @@ export const revalidate = 30;
  * API, dan Hero Banner API sungguhan (dua API terpisah, lihat UPDATE 2:
  * Hero Banner tidak lagi berbagi data dengan Banner Produk).
  *
- * Catatan jujur soal keterbatasan data publik:
- * Backend tidak memiliki endpoint publik "produk terlaris" (agregasi penjualan
- * hanya tersedia di Admin Dashboard API yang butuh auth admin). Karena itu,
- * "Produk Terbaru" diurutkan dari created_at, sedangkan "Produk Terlaris" untuk
- * saat ini masih menampilkan katalog yang sama. Ini bisa ditingkatkan nanti
- * dengan endpoint publik `/products?sort=terlaris` di backend tanpa mengubah
- * struktur halaman ini.
- *
  * BUG FIX — "Produk Rekomendasi" SEBELUMNYA ikut memakai `products` yang sama
  * di atas (bug: section itu jadi identik dengan halaman Semua Produk). Sekarang
  * diambil lewat request terpisah dengan filter `recommended: true`, yang benar-
  * benar difilter di backend (`is_recommended = true`, lihat
  * productRepository.findAll), sehingga hanya produk yang ditandai Admin sebagai
  * Produk Rekomendasi yang tampil di section ini.
+ *
+ * BUG FIX — "Produk Terlaris" SEBELUMNYA ikut memakai daftar produk yang sama
+ * dengan halaman Semua Produk (urutan created_at, tanpa filter penjualan sama
+ * sekali), sehingga section itu terlihat identik dengan katalog dan fitur Produk
+ * Terlaris tidak berfungsi. Sekarang diambil lewat endpoint publik terpisah
+ * `/products/bestsellers`, yang diagregasi & diurutkan di backend berdasarkan
+ * jumlah penjualan sungguhan dari transaksi berstatus valid (lihat
+ * productRepository.getBestsellerAggregates / productService.getBestsellerProducts).
  */
 export default async function HomePage() {
-  const [{ items: newArrivalProducts }, { items: allProducts }, { items: recommendedProducts }, banners, heroBanners] = await Promise.all([
+  const [
+    { items: newArrivalProducts },
+    { items: bestsellerProducts },
+    { items: recommendedProducts },
+    banners,
+    heroBanners,
+  ] = await Promise.all([
     productService.getAll({ pageSize: 12, newArrival: true }),
-    productService.getAll({ pageSize: 12 }),
+    // BUG FIX — Produk Terlaris: request terpisah ke endpoint agregasi penjualan,
+    // BUKAN memakai ulang daftar seluruh produk seperti sebelumnya.
+    productService.getBestsellers(12),
     // BUG FIX — Produk Rekomendasi: request terpisah dengan filter is_recommended,
     // BUKAN memakai ulang `products` di atas seperti sebelumnya.
     productService.getAll({ pageSize: 12, recommended: true }),
@@ -79,7 +87,11 @@ export default async function HomePage() {
       )}
 
       <ProductRail title="Produk Terbaru" products={newArrivalProducts} emptyMessage="Belum ada produk terbaru." />
-      <ProductRail title="Produk Terlaris" products={allProducts} />
+      <ProductRail
+        title="Produk Terlaris"
+        products={bestsellerProducts}
+        emptyMessage="Belum ada produk terlaris."
+      />
       <ProductRail
         title="Produk Rekomendasi"
         products={recommendedProducts}

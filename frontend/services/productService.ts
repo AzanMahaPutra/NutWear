@@ -65,6 +65,17 @@ export const productService = {
     return { items: data.data, meta: data.meta };
   },
 
+  /**
+   * BUG FIX — Produk Terlaris (Beranda): sebelumnya tidak ada endpoint publik untuk ini
+   * sehingga Beranda menampilkan ulang seluruh katalog produk. Sekarang mengambil daftar
+   * produk terlaris sungguhan (diurutkan & difilter di backend, lihat productController.
+   * getBestsellers / productService.getBestsellerProducts).
+   */
+  async getBestsellers(limit = 12) {
+    const { data } = await apiClient.get<ApiResponse<Product[]>>("/products/bestsellers", { params: { limit } });
+    return { items: data.data };
+  },
+
   async getById(id: string) {
     const { data } = await apiClient.get<ApiResponse<Product>>(`/products/${id}`);
     return data.data;
