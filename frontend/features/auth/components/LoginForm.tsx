@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -7,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { FormInput } from "@/components/ui/FormInput";
+import { GoogleIcon } from "@/components/ui/GoogleIcon";
 import { loginSchema, LoginFormValues } from "@/features/auth/schemas/authSchemas";
 import { ROUTES } from "@/constants/routes";
 import { useToastStore } from "@/stores/toastStore";
@@ -22,6 +24,7 @@ export function LoginForm() {
   const router = useRouter();
   const showToast = useToastStore((s) => s.showToast);
   const setUser = useAuthStore((s) => s.setUser);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const {
     register,
@@ -37,6 +40,18 @@ export function LoginForm() {
       router.push(ROUTES.home);
     } catch (err) {
       showToast(getApiErrorMessage(err, "Email atau password salah"), "error");
+    }
+  }
+
+  // UPDATE — Login dengan Google: hanya memicu redirect ke Google, sisa alurnya
+  // diselesaikan di halaman ROUTES.authCallback (lihat authService.signInWithGoogle).
+  async function handleGoogleLogin() {
+    setIsGoogleLoading(true);
+    try {
+      await authService.signInWithGoogle();
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Gagal memulai Login dengan Google"), "error");
+      setIsGoogleLoading(false);
     }
   }
 
@@ -85,6 +100,22 @@ export function LoginForm() {
           {isSubmitting ? "Memproses..." : "MASUK"}
         </button>
       </form>
+
+      <div className="my-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-neutral-200" />
+        <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Atau</span>
+        <div className="h-px flex-1 bg-neutral-200" />
+      </div>
+
+      <button
+        type="button"
+        onClick={handleGoogleLogin}
+        disabled={isGoogleLoading}
+        className="flex w-full items-center justify-center gap-2.5 rounded-full border border-neutral-300 bg-white py-3.5 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-60"
+      >
+        <GoogleIcon className="h-5 w-5" />
+        {isGoogleLoading ? "Mengalihkan ke Google..." : "Masuk dengan Google"}
+      </button>
 
       <p className="mt-6 text-center text-sm text-neutral-500">
         Belum punya akun?{" "}

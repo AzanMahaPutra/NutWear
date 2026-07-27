@@ -20,6 +20,9 @@ export const ROUTES = {
   register: "/register",
   forgotPassword: "/forgot-password",
   resetPassword: "/reset-password",
+  /** UPDATE — Login dengan Google: halaman yang menerima redirect balik dari
+   * Google OAuth (lewat Supabase Auth) sebelum diarahkan ke Beranda/Login. */
+  authCallback: "/auth/callback",
   profile: "/profile",
   profileAlamat: "/profile/alamat",
   riwayatPesanan: "/profile/riwayat-pesanan",

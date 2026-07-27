@@ -14,6 +14,9 @@ export interface User {
   role: "customer" | "admin";
   status: UserAccountStatus;
   bannedReason?: string | null;
+  /** UPDATE — Login dengan Google: foto profil Google (kalau ada). null untuk
+   * akun yang dibuat lewat Register Email & Password biasa. */
+  avatarUrl?: string | null;
 }
 
 export interface UserAddress {

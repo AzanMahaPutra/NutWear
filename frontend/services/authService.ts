@@ -2,6 +2,7 @@ import { apiClient, setAccessToken } from "@/lib/apiClient";
 import { supabaseClient } from "@/lib/supabaseClient";
 import { ApiResponse } from "@/lib/apiTypes";
 import { User } from "@/types/user";
+import { ROUTES } from "@/constants/routes";
 
 interface AuthResult {
   user: User;
@@ -27,6 +28,40 @@ export const authService = {
 
   async login(payload: { email: string; password: string }) {
     const { data } = await apiClient.post<ApiResponse<AuthResult>>("/auth/login", payload);
+    setAccessToken(data.data.accessToken);
+    return data.data.user;
+  },
+
+  /**
+   * UPDATE — Login dengan Google, langkah 1: memicu redirect OAuth ke Google
+   * lewat Supabase Auth (`supabaseClient`, sudah ada sebelumnya untuk Reset
+   * Password — lihat lib/supabaseClient.ts). Konfigurasi Google (Client ID,
+   * Client Secret, dll) sepenuhnya diatur di Supabase Dashboard, tidak ada
+   * apa pun yang di-hardcode di sini. Fungsi ini TIDAK mengembalikan user —
+   * browser akan redirect keluar ke halaman Google, lalu kembali lagi ke
+   * ROUTES.authCallback (lihat app/auth/callback/page.tsx) yang baru
+   * menyelesaikan login-nya lewat loginWithGoogle() di bawah.
+   */
+  async signInWithGoogle() {
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}${ROUTES.authCallback}` },
+    });
+    if (error) {
+      throw error;
+    }
+  },
+
+  /**
+   * UPDATE — Login dengan Google, langkah 2: dipanggil dari halaman callback
+   * setelah Supabase Auth berhasil membuat session di browser. Mengirim
+   * access/refresh token sesi tsb ke backend supaya baris profil `users`
+   * disinkronkan (user baru dibuat kalau belum ada, atau dipakai apa adanya
+   * kalau sudah ada — lihat backend authService.loginWithGoogle) dan cookie
+   * refresh token aplikasi ikut terisi, PERSIS seperti login() di atas.
+   */
+  async loginWithGoogle(payload: { accessToken: string; refreshToken?: string }) {
+    const { data } = await apiClient.post<ApiResponse<AuthResult>>("/auth/google", payload);
     setAccessToken(data.data.accessToken);
     return data.data.user;
   },
