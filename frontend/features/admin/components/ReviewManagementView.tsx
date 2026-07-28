@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Star, Eye, EyeOff } from "lucide-react";
+import { Star, Eye, EyeOff, MessageSquare, MessageSquareText } from "lucide-react";
 import { DataTable } from "@/components/shared/DataTable";
 import { RowActions } from "@/components/shared/RowActions";
 import { RatingStars } from "@/components/ui/RatingStars";
-import { reviewService, ReviewStatus } from "@/services/reviewService";
+import { reviewService, ReviewStatus, ReviewAdminReply } from "@/services/reviewService";
 import { productService } from "@/services/productService";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { formatDate } from "@/utils/formatDate";
 import { cn } from "@/utils/cn";
+import { ReviewReplyModal } from "@/features/admin/components/ReviewReplyModal";
 
 interface AdminReviewItem {
   id: string;
@@ -22,6 +23,8 @@ interface AdminReviewItem {
   comment: string;
   createdAt: string;
   status: ReviewStatus;
+  // UPDATE — Balasan Review oleh Admin: null kalau review ini belum dibalas.
+  adminReply: ReviewAdminReply | null;
 }
 
 // UPDATE — Moderasi Review: badge status di tabel Review Admin supaya Admin
@@ -72,6 +75,7 @@ export function ReviewManagementView() {
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>("all");
   const [productFilter, setProductFilter] = useState<string>(ALL_PRODUCTS);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [replyingReview, setReplyingReview] = useState<AdminReviewItem | null>(null);
   const showToast = useToastStore((s) => s.showToast);
 
   // UPDATE — Ambil seluruh produk (pageSize besar) sekali di awal untuk mengisi
@@ -120,6 +124,14 @@ export function ReviewManagementView() {
     } catch (err) {
       showToast(getApiErrorMessage(err), "error");
     }
+  }
+
+  // UPDATE — Balasan Review oleh Admin: dipanggil ReviewReplyModal setelah
+  // balasan berhasil dikirim/diedit/dihapus, supaya tabel langsung update
+  // tanpa perlu refetch seluruh daftar review.
+  function handleReplySaved(reviewId: string, adminReply: ReviewAdminReply | null) {
+    setReviews((prev) => prev.map((r) => (r.id === reviewId ? { ...r, adminReply } : r)));
+    setReplyingReview(null);
   }
 
   return (
@@ -223,12 +235,31 @@ export function ReviewManagementView() {
                     </>
                   )}
                 </button>
+                {/* UPDATE — Balasan Review oleh Admin: tombol berubah menjadi
+                    "Edit Balasan" kalau review ini sudah pernah dibalas. */}
+                <button
+                  type="button"
+                  onClick={() => setReplyingReview(r)}
+                  className="flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-600 transition-colors hover:bg-neutral-100"
+                >
+                  {r.adminReply ? (
+                    <>
+                      <MessageSquareText className="h-3.5 w-3.5" /> Edit Balasan
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="h-3.5 w-3.5" /> Balas
+                    </>
+                  )}
+                </button>
                 <RowActions onDelete={() => handleDelete(r.id)} />
               </div>
             ),
           },
         ]}
       />
+
+      <ReviewReplyModal review={replyingReview} onClose={() => setReplyingReview(null)} onSaved={handleReplySaved} />
     </div>
   );
 }

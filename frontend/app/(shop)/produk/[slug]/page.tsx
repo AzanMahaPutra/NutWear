@@ -11,6 +11,9 @@ import { enrichProduct } from "@/utils/enrichProduct";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
+  /** UPDATE — Balasan Review oleh Admin (Notifikasi): `reviewId` diisi saat user
+   * membuka halaman ini lewat notifikasi "Review Anda Telah Dibalas". */
+  searchParams: Promise<{ reviewId?: string }>;
 }
 
 async function safeGetProductBySlug(slug: string) {
@@ -46,9 +49,15 @@ export async function generateMetadata({ params }: ProductDetailPageProps): Prom
  * foto gallery yang punya pasangan (lihat ProductGallery/ProductMainPhoto),
  * yang membuka halaman /produk/[slug]/pasangan?imageId=... Related Product
  * tetap menampilkan produk lain di kategori yang sama seperti sebelumnya.
+ *
+ * UPDATE — Balasan Review oleh Admin (Notifikasi): query string `reviewId`
+ * (dari notifikasi "Review Anda Telah Dibalas") diteruskan ke
+ * ProductReviewsSection supaya review yang dibalas otomatis di-scroll &
+ * di-highlight sementara agar mudah ditemukan.
  */
-export default async function ProductDetailPage({ params }: ProductDetailPageProps) {
+export default async function ProductDetailPage({ params, searchParams }: ProductDetailPageProps) {
   const { slug } = await params;
+  const { reviewId } = await searchParams;
   const rawProduct = await safeGetProductBySlug(slug);
 
   if (!rawProduct) notFound();
@@ -76,7 +85,7 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
 
       <Container>
         <ProductDescription product={product} />
-        <ProductReviewsSection product={product} reviews={reviewData.items} />
+        <ProductReviewsSection product={product} reviews={reviewData.items} highlightReviewId={reviewId} />
       </Container>
 
       <RelatedProducts products={related} />

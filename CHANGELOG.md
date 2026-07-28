@@ -1,179 +1,189 @@
-# CHANGELOG — Bug Fix: Produk Terlaris Menampilkan Semua Produk
+# CHANGELOG — Review Helpful & Balasan Review oleh Admin
 
-## 1. Penyebab Bug
+Update ini berisi 2 fitur baru pada sistem Review Produk, sesuai permintaan:
 
-Section **"Produk Terlaris"** di halaman Beranda (`frontend/app/(shop)/page.tsx`) sama
-sekali tidak memiliki sumber data sendiri. Kode sebelumnya memakai ulang variabel
-`allProducts` — daftar produk yang sama persis dengan yang dipakai halaman **Semua
-Produk** (diambil dari `GET /products`, diurutkan dari `created_at`, tanpa filter
-penjualan apa pun).
+1. **Review Helpful** — tombol "👍 Membantu" / "👎 Tidak Membantu" pada setiap
+   review, satu vote per akun per review, tersimpan di database.
+2. **Balasan Review oleh Admin** — Admin dapat membalas review customer
+   (Balas/Edit/Hapus Balasan), balasan tampil dengan identitas visual "Official
+   Store" di halaman Detail Produk, dan user pemilik review menerima
+   notifikasi + bisa langsung diarahkan ke review yang dibalas.
 
-Akar masalahnya tercatat langsung di komentar kode lama:
+Tidak ada refactor besar, struktur folder tidak berubah, dan tidak ada fitur
+lain (Produk, Order, Payment, Wishlist, dll.) yang tersentuh di luar dua hal
+di atas. Seluruh komponen, service, dan pola struktur yang sudah ada (Modal,
+DataTable, RowActions, notificationService, dst.) dipakai ulang, bukan dibuat
+dari nol.
 
-> "Backend tidak memiliki endpoint publik 'produk terlaris' (agregasi penjualan hanya
-> tersedia di Admin Dashboard API yang butuh auth admin)."
-
-Karena endpoint publik untuk itu memang belum pernah dibuat, section Produk Terlaris
-otomatis terlihat identik dengan katalog produk dan tidak pernah benar-benar
-mengurutkan berdasarkan jumlah penjualan.
-
-## 2. Perubahan yang Dilakukan
-
-1. **Endpoint publik baru** `GET /products/bestsellers?limit=12` yang mengagregasi
-   jumlah produk terjual **di database/backend** (bukan di frontend), lalu mengembalikan
-   produk yang benar-benar terurut dari penjualan terbanyak ke tersedikit.
-2. Perhitungan "terjual" memakai **status order yang sama persis** dengan yang sudah
-   dipakai untuk field `totalTerjual` pada Card Produk (`sudah_dibayar` dan `selesai`),
-   supaya angka yang dipakai untuk **mengurutkan** Produk Terlaris konsisten dengan angka
-   **"Terjual"** yang tampil di Card Produk itu sendiri. Status lain (menunggu
-   pembayaran, pending, dibatalkan, expired, gagal, ditolak, refund) tidak dihitung.
-3. **Pembeda saat jumlah penjualan sama**: produk dengan transaksi valid **paling baru**
-   ditampilkan lebih dulu (bukan urutan database/ID/tanggal dibuat).
-4. **Tanpa transaksi valid sama sekali** → endpoint mengembalikan array kosong. Section
-   di Beranda menampilkan **placeholder "Belum ada produk terlaris."** (pola yang sama
-   dengan section Produk Rekomendasi), **bukan** fallback menampilkan seluruh katalog.
-5. Produk yang sudah dinonaktifkan Admin (`is_active = false`) otomatis tidak ikut
-   tampil di Produk Terlaris.
-6. Query dilakukan dalam **2 query database** per request (agregasi `order_items` →
-   ambil detail produk berdasarkan id terlaris), bukan mengambil seluruh transaksi/
-   produk lalu menghitung/mengurutkan di frontend.
-7. Halaman Beranda (satu-satunya halaman yang memakai komponen `ProductRail` untuk
-   Produk Terlaris) diperbarui untuk memanggil endpoint baru ini, menggantikan
-   pemakaian ulang `allProducts`.
-
-Tidak ada migration database yang diperlukan — perubahan hanya berupa query baru pada
-tabel `order_items`, `orders`, dan `products` yang sudah ada.
-
-## 3. File yang Diubah
-
-### Backend
-| File | Perubahan |
-|---|---|
-| `backend/src/repositories/productRepository.js` | Tambah `getBestsellerAggregates()` (agregasi quantity terjual + tanggal transaksi terakhir per produk, hanya status valid `sudah_dibayar`/`selesai`) dan `findByIds()` (ambil produk aktif berdasarkan daftar id). |
-| `backend/src/services/productService.js` | Tambah `getBestsellerProducts(limit)`: urutkan hasil agregasi (total terjual desc, lalu tanggal transaksi terakhir desc), ambil detail produk, lalu lengkapi dengan rating/`totalTerjual` seperti daftar produk lain (reuse `attachRatingAndSold`). |
-| `backend/src/controllers/productController.js` | Tambah handler `getBestsellers`. |
-| `backend/src/routes/productRoutes.js` | Tambah route publik `GET /products/bestsellers` (didaftarkan sebelum `/:id` supaya tidak tertangkap sebagai parameter id). |
-
-### Frontend
-| File | Perubahan |
-|---|---|
-| `frontend/services/productService.ts` | Tambah method `getBestsellers(limit)` yang memanggil endpoint baru. |
-| `frontend/app/(shop)/page.tsx` | Section "Produk Terlaris" sekarang memakai `productService.getBestsellers(12)` (bukan `allProducts`), dan menampilkan placeholder "Belum ada produk terlaris." saat hasilnya kosong. |
-
-Tidak ada file lain yang diubah. Fitur Produk Terbaru, Produk Rekomendasi, Promo,
-Pasangan Produk, Banner, Kategori, Dashboard Admin, dsb. tidak tersentuh sama sekali.
-
-## 4. Cara Perhitungan Produk Terlaris
-
-1. Ambil seluruh baris `order_items` yang order induknya berstatus **`sudah_dibayar`**
-   atau **`selesai`** (daftar status yang sama dengan `totalTerjual` di Card Produk).
-2. Jumlahkan `quantity` per `product_id` → **total terjual per produk**.
-3. Catat juga tanggal order **terbaru** per produk (untuk pembeda jika total sama).
-4. Urutkan produk dari total terjual **terbesar → terkecil**; jika sama, transaksi
-   **terbaru** menang.
-5. Ambil N produk teratas (default 12), lalu ambil detail produknya (hanya yang masih
-   aktif) dan kembalikan dalam urutan tersebut ke frontend.
-6. Jika tidak ada satu pun transaksi berstatus valid, hasilnya kosong → frontend
-   menampilkan placeholder.
-
-## 5. Hasil Pengujian Seluruh Skenario
-
-| # | Skenario | Hasil |
-|---|----------|-------|
-| 1 | Belum ada transaksi selesai | ✅ Endpoint mengembalikan array kosong → Beranda menampilkan placeholder "Belum ada produk terlaris." |
-| 2 | Ada beberapa transaksi berhasil | ✅ Produk diurutkan dari total terjual terbesar ke terkecil (diverifikasi dengan simulasi Node.js: 250 → 175 → 60 pcs tampil sesuai urutan). |
-| 3 | Transaksi Pending tidak ikut dihitung | ✅ `SOLD_COUNT_STATUSES` hanya berisi `sudah_dibayar`/`selesai`; status `pending`/`menunggu_pembayaran` tidak ada dalam daftar sehingga dikecualikan oleh query `.in("orders.status", ...)`. |
-| 4 | Transaksi Dibatalkan tidak ikut dihitung | ✅ `dibatalkan` tidak ada dalam `SOLD_COUNT_STATUSES`. |
-| 5 | Transaksi Expired tidak ikut dihitung | ✅ `expired` tidak ada dalam `SOLD_COUNT_STATUSES`. |
-| 6 | Transaksi Sudah Dibayar ikut dihitung | ✅ `sudah_dibayar` ada dalam `SOLD_COUNT_STATUSES`. |
-| 7 | Transaksi Selesai ikut dihitung | ✅ `selesai` ada dalam `SOLD_COUNT_STATUSES`. |
-| 8 | Section tidak lagi menampilkan seluruh produk | ✅ Sumber data diganti total: dari `allProducts` (seluruh katalog) menjadi `productService.getBestsellers(12)` (hasil agregasi penjualan sungguhan). |
-| 9 | Jumlah "Terjual" pada Card Produk sesuai hasil perhitungan transaksi | ✅ Card Produk tetap memakai `totalTerjual` dari `attachRatingAndSold`/`getSoldCounts` yang sudah ada (tidak diubah), dan fungsi yang sama dipakai ulang untuk melengkapi respons endpoint Produk Terlaris — sehingga angkanya selalu konsisten satu sama lain. |
-
-Verifikasi tambahan yang dilakukan:
-- `npx tsc --noEmit` pada `frontend/` → **tidak ada error TypeScript**.
-- `node -c` pada seluruh file backend yang diubah → **tidak ada syntax error**.
-- Simulasi logika sorting/tie-break (Node.js) untuk kasus jumlah penjualan sama →
-  urutan hasil sesuai aturan (total terbesar dulu, lalu transaksi terbaru sebagai
-  pembeda).
+**Catatan cakupan:** dokumen permintaan menyebut "Foto Review (jika ada)" pada
+modal balasan Admin. Sistem Review di project ini **belum punya field foto
+review** sama sekali (baik di database, API, maupun form Tulis Ulasan) — hanya
+rating + komentar. Menambahkannya berarti membuat fitur upload foto review
+baru dari nol, di luar cakupan "Balasan Review oleh Admin" yang diminta, jadi
+bagian ini sengaja tidak ditambahkan supaya tidak melanggar aturan "jangan
+melakukan refactor besar". Modal balasan tetap menampilkan Nama Customer, Nama
+Produk, Isi Review, dan Rating seperti diminta.
 
 ---
 
-# CHANGELOG — Bug Fix: Section "Produk Rekomendasi" Menampilkan Seluruh Produk
-
-## 1. Penyebab Bug
-
-Section **Produk Rekomendasi** di Beranda (`frontend/app/(shop)/page.tsx`)
-sebelumnya benar-benar **belum pernah diimplementasikan** sebagai fitur nyata:
-
-- Tidak ada kolom/flag apa pun di database (tabel `products`) untuk menandai
-  produk sebagai "Rekomendasi".
-- Halaman Beranda hanya mengambil satu daftar produk (`productService.getAll({
-  pageSize: 12 })`) lalu memakai variabel yang **sama** untuk ketiga section:
-  Produk Terbaru, Produk Terlaris, **dan** Produk Rekomendasi.
-- Akibatnya section Produk Rekomendasi selalu identik dengan katalog biasa —
-  persis seperti yang dilaporkan.
-- Form Tambah/Edit Produk di Admin juga tidak punya kontrol untuk menandai
-  produk sebagai rekomendasi, karena memang belum ada field-nya di database.
-
-## 2. File yang Diubah
+## 1. File yang Diubah/Ditambahkan
 
 ### Backend
 | File | Perubahan |
 |---|---|
-| `backend/src/database/migrations/20260727_add_product_is_recommended.sql` | **Baru.** Menambahkan kolom `is_recommended boolean not null default false` ke tabel `products` + index, mengikuti pola persis `is_new_arrival`. |
-| `backend/src/database/schema.sql` | Disamakan dengan migration baru (kolom + index `is_recommended`), supaya schema referensi tetap konsisten dengan migration. |
-| `backend/src/repositories/productRepository.js` | `findAll()` menerima parameter `recommended`; kalau `true`, query menambahkan `.eq("is_recommended", true)` — filter sungguhan di database, bukan di frontend. `create()` menyimpan `is_recommended` dari payload. |
-| `backend/src/services/productService.js` | `toResponse()` menyertakan `isRecommended`. `getProducts()` meneruskan parameter `recommended` ke repository. `updateProduct()` menyimpan perubahan `isRecommended` (mengikuti pola `isNewArrival`, hanya diupdate kalau memang dikirim sebagai boolean). |
-| `backend/src/controllers/productController.js` | `getAll` membaca query param `?recommended=true` dan meneruskannya ke service (dikonversi ke boolean yang benar). |
-| `backend/src/validators/productValidator.js` | Tambah validasi opsional `isRecommended` (boolean) saat membuat produk. |
+| `backend/src/database/migrations/20260727_add_review_helpful_votes.sql` | **Baru.** Tabel `review_votes` (review_id, user_id, vote, unique per user+review) untuk fitur Review Helpful. |
+| `backend/src/database/migrations/20260727_add_review_admin_reply.sql` | **Baru.** Kolom `admin_reply`, `admin_reply_at`, `admin_reply_by` pada tabel `reviews` untuk fitur Balasan Admin. |
+| `backend/src/middlewares/authMiddleware.js` | Tambah `attachUserIfPresent` — middleware login opsional (tidak menolak request tanpa token) supaya endpoint publik daftar review tetap bisa diakses semua orang, tapi tetap tahu `req.user` kalau pengunjungnya kebetulan sedang login. |
+| `backend/src/repositories/reviewVoteRepository.js` | **Baru.** Query ke tabel `review_votes`: hitung jumlah vote per review (batch), ambil vote milik user tertentu (batch), simpan/ganti vote (upsert), hapus vote. |
+| `backend/src/repositories/reviewRepository.js` | Select review sekarang menyertakan `admin_reply*` + nama Admin yang membalas (`admin_replier`, lewat FK `admin_reply_by`). FK ke `users` didisambiguasi eksplisit (`users!reviews_user_id_fkey` vs `users!reviews_admin_reply_by_fkey`) karena sekarang ada dua relasi `reviews -> users`. Tambah `setAdminReply()` & `removeAdminReply()`. |
+| `backend/src/services/reviewService.js` | `toResponse()` sekarang menyertakan `helpfulVotes`, `myVote`, `adminReply`. `getReviewsByProduct()` menerima `currentUserId` opsional untuk menghitung `myVote`. Tambah `setVote()`, `removeVote()`, `replyToReview()` (juga mengirim notifikasi), `deleteReply()`. |
+| `backend/src/services/notificationService.js` | Tambah `notifyReviewReplied()` — notifikasi "Review Anda Telah Dibalas" ke pemilik review, dengan link `/produk/{slug}?reviewId={id}`. |
+| `backend/src/controllers/reviewController.js` | `getByProduct` meneruskan `req.user?.id`. Tambah handler `vote`, `removeVote`, `reply`, `deleteReply`. |
+| `backend/src/validators/reviewValidator.js` | Tambah `voteValidator` (vote harus `membantu`/`tidak_membantu`) dan `replyValidator` (pesan wajib diisi, maks. 1000 karakter). |
+| `backend/src/routes/reviewRoutes.js` | Tambah route `POST/DELETE /reviews/:id/vote` (login wajib) dan `POST/DELETE /reviews/:id/reply` (Admin saja). Route `GET /reviews/product/:productId` sekarang lewat `attachUserIfPresent`. |
 
 ### Frontend
 | File | Perubahan |
 |---|---|
-| `frontend/types/product.ts` | Tipe `Product` tambah field opsional `isRecommended`. |
-| `frontend/services/productService.ts` | `GetProductsParams` tambah `recommended?: boolean` (diteruskan sebagai query string ke `GET /products`). Tipe payload `create`/`update` tambah `isRecommended`. |
-| `frontend/stores/adminProductStore.ts` | Tipe payload `addProduct` tambah `isRecommended?: boolean`. |
-| `frontend/features/admin/components/ProductForm.tsx` | Tambah checkbox **"Tandai sebagai Produk Rekomendasi"** (terpisah dari checkbox New Arrival yang sudah ada), lengkap dengan default value untuk mode Tambah maupun Edit Produk. |
-| `frontend/features/home/components/ProductRail.tsx` | Tambah prop opsional `emptyMessage`. Kalau diisi dan `products` kosong, section tetap tampil dengan pesan placeholder (bukan disembunyikan). Rail lain (Terbaru/Terlaris) tidak mengirim prop ini sehingga perilakunya **tidak berubah sama sekali**. |
-| `frontend/app/(shop)/page.tsx` | Mengambil **request terpisah** `productService.getAll({ pageSize: 12, recommended: true })` khusus untuk section Produk Rekomendasi (bukan lagi memakai ulang daftar produk yang sama), dan mengirim `emptyMessage="Belum ada produk rekomendasi."` ke rail tsb. |
+| `frontend/services/reviewService.ts` | Tambah tipe `ReviewVote`, `ReviewHelpfulVotes`, `ReviewAdminReply`. `ReviewApiItem` menyertakan `helpfulVotes`, `myVote`, `adminReply`. Tambah method `vote()`, `removeVote()`, `reply()`, `deleteReply()`. |
+| `frontend/features/review/components/ReviewCard.tsx` | Tambah tombol "👍 Membantu / 👎 Tidak Membantu" (klik tombol yang sedang aktif untuk membatalkan vote; belum login diarahkan ke halaman Login). Tambah card "Balasan dari [Nama Toko]" dengan badge "Official Store" kalau review sudah dibalas Admin. Tambah prop `highlighted` untuk sorotan sementara saat dibuka dari notifikasi. |
+| `frontend/features/review/components/ProductReviewsSection.tsx` | Terima prop `highlightReviewId` (dari query string), scroll otomatis + sorot review terkait, lalu sorotan hilang setelah beberapa detik. Refetch review lewat browser saat user login supaya `myVote` akurat (halaman ini dirender di server tanpa access token). |
+| `frontend/app/(shop)/produk/[slug]/page.tsx` | Terima `searchParams.reviewId`, diteruskan ke `ProductReviewsSection`. |
+| `frontend/features/admin/components/ReviewReplyModal.tsx` | **Baru.** Modal "Balas Ulasan" — menampilkan Nama Customer, Nama Produk, Isi Review, Rating, textarea balasan, tombol Kirim Balasan/Batal, dan tombol Hapus Balasan kalau sedang mengedit balasan yang sudah ada. |
+| `frontend/features/admin/components/ReviewManagementView.tsx` | Tambah tombol "Balas" (berubah jadi "Edit Balasan" kalau review sudah dibalas) di kolom Aksi, terhubung ke `ReviewReplyModal`. |
 
-Tidak ada file lain yang diubah. Fitur New Arrival, Promo, Pasangan Produk,
-Banner, Kategori, dsb. tidak tersentuh sama sekali.
+Tidak ada file lain yang diubah. Fitur Moderasi Review, Filter Produk/Rating,
+dan seluruh halaman Admin lainnya tetap seperti semula.
 
-## 3. Cara Kerja Filter Produk Rekomendasi (Setelah Perbaikan)
+---
 
-1. Admin menandai produk lewat checkbox **"Tandai sebagai Produk
-   Rekomendasi"** di Form Tambah/Edit Produk → tersimpan sebagai
-   `is_recommended = true` di tabel `products`.
-2. Halaman Beranda memanggil `productService.getAll({ recommended: true })`
-   secara terpisah dari daftar produk biasa.
-3. Request ini terkirim sebagai `GET /products?recommended=true&pageSize=12`.
-4. `productController.getAll` mem-parse `recommended=true` lalu meneruskannya
-   ke `productService.getProducts`.
-5. `productRepository.findAll` menambahkan filter `.eq("is_recommended",
-   true)` ke query Supabase — jadi **database sendiri** yang memfilter, bukan
-   frontend yang memotong array.
-6. Hasilnya dipakai khusus untuk `<ProductRail title="Produk Rekomendasi" ... />`.
-   Kalau hasilnya kosong, rail menampilkan placeholder **"Belum ada produk
-   rekomendasi."** alih-alih disembunyikan atau menampilkan seluruh katalog.
+## 2. Struktur Database Baru
 
-## 4. Hasil Pengujian
+### Tabel `review_votes` (Review Helpful)
+```
+id           uuid primary key
+review_id    uuid  -> reviews(id) on delete cascade
+user_id      uuid  -> users(id) on delete cascade
+vote         varchar(20)  check ('membantu' | 'tidak_membantu')
+created_at   timestamp
+updated_at   timestamp
+unique (review_id, user_id)
+```
+Satu baris = satu vote milik satu user pada satu review. Unique index
+`(review_id, user_id)` adalah jaring pengaman utama supaya satu akun tidak
+mungkin punya lebih dari satu vote pada review yang sama (mencegah spam vote
+di level database, bukan hanya di frontend).
+
+### Kolom baru pada `reviews` (Balasan Admin)
+```
+admin_reply     text        -- isi balasan, null = belum dibalas
+admin_reply_at  timestamp   -- waktu dibuat/terakhir diedit
+admin_reply_by  uuid -> users(id) on delete set null
+```
+Balasan disimpan langsung sebagai kolom di `reviews` (bukan tabel terpisah)
+karena relasinya murni satu review = maksimal satu balasan. Baik "Balas" baru
+maupun "Edit Balasan" memakai endpoint & fungsi yang sama (`setAdminReply`) —
+selalu UPDATE kolom yang sama, tidak pernah membuat baris balasan kedua.
+
+---
+
+## 3. Cara Kerja Review Helpful
+
+1. Setiap review di Detail Produk menampilkan dua tombol dengan jumlah vote:
+   `👍 Membantu (n)` dan `👎 Tidak Membantu (n)`.
+2. **Belum login** → menekan salah satu tombol menampilkan toast "Silakan
+   masuk terlebih dahulu untuk memberi vote" dan mengarahkan ke halaman Login
+   (pola yang sama dengan tombol Wishlist/Keranjang yang sudah ada di
+   `ProductPurchasePanel.tsx`).
+3. **Sudah login, belum pernah vote** → `POST /reviews/:id/vote { vote }`
+   menyimpan vote baru. Tombol yang dipilih langsung menyala.
+4. **Sudah vote, ganti pilihan** → menekan tombol yang berbeda memanggil
+   endpoint yang sama; backend melakukan **upsert** (`onConflict:
+   review_id,user_id`), jadi baris vote lama otomatis diperbarui, bukan
+   ditambah baris baru. Jumlah di kedua tombol langsung ikut berubah sesuai
+   data asli (dihitung ulang dari tabel `review_votes`, bukan increment/
+   decrement manual).
+5. **Hapus vote** → menekan tombol yang **sedang aktif** memanggil `DELETE
+   /reviews/:id/vote`, menghapus baris vote milik user tersebut. Jumlah vote
+   ikut berkurang.
+6. Vote tersimpan di database (bukan state browser), jadi tetap ada walau
+   user logout lalu login kembali — saat Detail Produk dibuka lagi, backend
+   mengembalikan `myVote` sesuai data di `review_votes`.
+7. Satu akun hanya bisa punya satu vote per review — dijaga dua lapis:
+   validasi di `reviewService.setVote` + unique index database
+   `(review_id, user_id)` sebagai jaring pengaman terakhir kalau ada race
+   condition.
+
+---
+
+## 4. Cara Kerja Balasan Review oleh Admin
+
+1. Di halaman **Review Admin**, setiap baris review punya tombol **"Balas"**
+   (atau **"Edit Balasan"** kalau review itu sudah pernah dibalas).
+2. Tombol membuka modal `ReviewReplyModal` berisi Nama Customer, Nama Produk,
+   Isi Review, Rating, textarea balasan (maks. 1000 karakter), tombol **Kirim
+   Balasan** dan **Batal** — serta tombol **Hapus Balasan** kalau sedang
+   mengedit balasan yang sudah ada.
+3. **Kirim Balasan** memanggil `POST /reviews/:id/reply { message }`. Endpoint
+   ini dipakai untuk balasan baru maupun edit balasan — keduanya sama-sama
+   UPDATE kolom `admin_reply*` pada baris review yang sama, sesuai aturan
+   "setiap review maksimal satu balasan resmi dari Admin".
+4. **Hapus Balasan** memanggil `DELETE /reviews/:id/reply`, mengosongkan
+   kembali kolom `admin_reply*` tanpa menghapus review itu sendiri.
+5. Hanya Admin (`requireRole("admin")`) yang bisa mengakses ketiga endpoint
+   ini — user biasa tidak mendapat opsi apa pun untuk mengubah balasan Admin.
+6. Di halaman **Detail Produk**, review yang sudah dibalas menampilkan card
+   balasan dengan tampilan berbeda dari review customer: latar warna
+   berbeda, badge **"Official Store"**, ikon centang verifikasi (`BadgeCheck`),
+   nama toko yang membalas ("Balasan dari NutWear Official"), dan tanggal
+   balasan.
+
+---
+
+## 5. Cara Kerja Notifikasi Balasan Review
+
+1. Setelah `replyToReview` berhasil menyimpan balasan (baru maupun edit),
+   `notificationService.notifyReviewReplied()` dipanggil secara
+   fire-and-forget (gagal kirim notifikasi tidak boleh membuat balasan gagal
+   tersimpan) — hanya untuk balasan **baru/diedit**, bukan saat Hapus
+   Balasan.
+2. Notifikasi dikirim khusus ke user pemilik review (bukan broadcast), dengan
+   judul **"Review Anda Telah Dibalas"** dan isi menyebutkan nama produk yang
+   direview, mengikuti pola `notifyOrderStatus`/`notifyAccountBanned` yang
+   sudah ada di `notificationService.js`.
+3. `link` notifikasi mengarah ke `/produk/{slug}?reviewId={id}`. Saat user
+   menekan notifikasi di `NotificationBell`, router langsung membuka Detail
+   Produk tersebut (perilaku klik notifikasi yang sudah ada, tidak diubah).
+4. Di Detail Produk, `ProductReviewsSection` membaca `reviewId` dari query
+   string, otomatis **scroll** ke review tersebut dan memberi **sorotan
+   sementara** (latar kuning pudar) selama beberapa detik supaya mudah
+   ditemukan, lalu sorotan hilang dengan sendirinya.
+
+---
+
+## 6. Hasil Pengujian Skenario
 
 | # | Skenario | Hasil |
 |---|---|---|
-| 1 | Admin menandai 2 produk sebagai Produk Rekomendasi | ✅ Hanya 2 produk tsb yang muncul di section (filter `is_recommended = true` di query, bukan di frontend) |
-| 2 | Admin menonaktifkan status Produk Rekomendasi pada salah satu produk | ✅ Produk langsung hilang dari section pada request berikutnya (ISR revalidate 30 detik seperti section lain di Beranda ini) |
-| 3 | Belum ada Produk Rekomendasi sama sekali | ✅ Section tetap tampil dengan placeholder "Belum ada produk rekomendasi.", bukan seluruh katalog |
-| 4 | Section tidak pernah lagi menampilkan seluruh produk | ✅ Query sekarang selalu menyertakan `.eq("is_recommended", true)` saat `recommended=true` diminta — tidak ada fallback ke katalog penuh di kode manapun |
-| 5 | Produk Terbaru & Produk Terlaris tidak terdampak | ✅ Keduanya tetap memakai daftar produk umum seperti sebelumnya (tidak mengirim `recommended`/`emptyMessage`) |
+| 1 | User dapat memberikan vote "Membantu" | ✅ `POST /reviews/:id/vote {vote:"membantu"}` menyimpan baris baru, tombol Membantu langsung menyala & angkanya bertambah. |
+| 2 | User dapat memberikan vote "Tidak Membantu" | ✅ Sama seperti di atas dengan `vote:"tidak_membantu"`. |
+| 3 | User hanya dapat memiliki satu vote per review | ✅ Dijaga unique index `(review_id, user_id)` + endpoint memakai upsert (`onConflict`), bukan insert biasa. |
+| 4 | User dapat mengganti pilihan vote | ✅ Menekan tombol lain memanggil `setVote` lagi → upsert mengganti baris vote yang sama; jumlah kedua tombol ikut update sesuai data asli. |
+| 5 | User dapat menghapus vote miliknya | ✅ Menekan tombol yang sedang aktif memanggil `DELETE /reviews/:id/vote`; `myVote` kembali `null`, jumlah vote berkurang. |
+| 6 | Jumlah vote selalu sesuai data di database | ✅ `helpfulVotes` selalu dihitung ulang lewat `reviewVoteRepository.getCountsForReviews`, tidak ada counter terpisah yang bisa tidak sinkron. |
+| 7 | Admin dapat membalas review | ✅ `POST /reviews/:id/reply` (role admin) menyimpan `admin_reply*`, response menyertakan `adminReply` yang langsung tampil di tabel & Detail Produk. |
+| 8 | Admin dapat mengedit balasan | ✅ Endpoint yang sama dipanggil ulang dengan pesan baru; kolom `admin_reply*` di-UPDATE (bukan baris baru), `admin_reply_at` ikut diperbarui. |
+| 9 | Admin dapat menghapus balasan | ✅ `DELETE /reviews/:id/reply` mengosongkan `admin_reply*`; card balasan hilang dari Detail Produk, tombol admin kembali jadi "Balas". |
+| 10 | Balasan tampil di halaman Detail Produk | ✅ `ReviewCard` merender card balasan di bawah tombol vote kalau `review.adminReply` tidak `null`. |
+| 11 | Balasan punya tampilan resmi berbeda | ✅ Card balasan pakai latar & border berbeda, badge "Official Store", ikon verifikasi, nama toko, dan tanggal. |
+| 12 | User menerima notifikasi saat review dibalas | ✅ `notifyReviewReplied` mengirim notifikasi ke `review.user_id` setiap balasan baru/diedit tersimpan. |
+| 13 | Klik notifikasi langsung membuka review yang dibalas | ✅ `link` notifikasi = `/produk/{slug}?reviewId={id}`; halaman Detail Produk scroll & menyorot review tersebut otomatis. |
+| 14 | Tampilan tetap responsif (Desktop/Tablet/Mobile) | ✅ Seluruh elemen baru (tombol vote, card balasan, modal Admin) memakai kelas Tailwind `flex flex-wrap`/`w-full`/ukuran teks & spasi yang konsisten dengan komponen sekitarnya yang sudah responsif (`ReviewCard`, `Modal`, `DataTable`), tanpa lebar/posisi tetap (fixed width) yang bisa merusak tampilan di layar kecil. |
 
-### Verifikasi Teknis
-- `node --check` pada seluruh file backend yang diubah → **tidak ada syntax
-  error**.
-- Perubahan tipe (`Product.isRecommended`, `GetProductsParams.recommended`,
-  payload `create`/`update`) semuanya **opsional**, sehingga tidak memutus
-  pemanggilan `productService`/`ProductRail` lain yang sudah ada di file-file
-  yang tidak diubah.
-- Tidak ada perubahan pada struktur folder maupun komponen/service yang tidak
-  berkaitan dengan Produk Rekomendasi.
+**Catatan pengujian:** verifikasi di atas dilakukan lewat pemeriksaan kode &
+alur data end-to-end (request/response, query database, render komponen)
+karena lingkungan pengerjaan ini tidak memiliki akses ke instance Supabase
+maupun ke internet untuk menjalankan `npm install`/build/test otomatis.
+Sebelum deploy, jalankan kedua file migration lewat Supabase SQL Editor
+terlebih dahulu, lalu disarankan menjalankan `npm run lint`/build seperti
+biasa di lingkungan development untuk konfirmasi akhir.

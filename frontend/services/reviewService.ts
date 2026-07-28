@@ -14,6 +14,21 @@ export interface ReviewPurchaseInfo {
 // "disembunyikan" (hanya terlihat di Review Admin).
 export type ReviewStatus = "ditampilkan" | "disembunyikan";
 
+// UPDATE — Review Helpful: pilihan vote "Membantu" atau "Tidak Membantu".
+export type ReviewVote = "membantu" | "tidak_membantu";
+
+export interface ReviewHelpfulVotes {
+  membantu: number;
+  tidakMembantu: number;
+}
+
+// UPDATE — Balasan Review oleh Admin: null kalau review ini belum dibalas.
+export interface ReviewAdminReply {
+  message: string;
+  repliedAt: string;
+  repliedByName: string;
+}
+
 interface ReviewApiItem {
   id: string;
   productId: string;
@@ -27,11 +42,20 @@ interface ReviewApiItem {
   orderId?: string | null;
   purchaseInfo?: ReviewPurchaseInfo | null;
   status: ReviewStatus;
+  helpfulVotes: ReviewHelpfulVotes;
+  myVote: ReviewVote | null;
+  adminReply: ReviewAdminReply | null;
 }
 
 interface ReviewSummary {
   average: number;
   count: number;
+}
+
+interface VoteResult {
+  reviewId: string;
+  helpfulVotes: ReviewHelpfulVotes;
+  myVote: ReviewVote | null;
 }
 
 export const reviewService = {
@@ -72,6 +96,31 @@ export const reviewService = {
   // menghapusnya dari database.
   async updateStatus(id: string, status: ReviewStatus) {
     const { data } = await apiClient.patch<ApiResponse<ReviewApiItem>>(`/reviews/${id}/status`, { status });
+    return data.data;
+  },
+
+  // UPDATE — Review Helpful: beri vote baru ATAU ganti pilihan vote yang sudah ada.
+  async vote(reviewId: string, vote: ReviewVote) {
+    const { data } = await apiClient.post<ApiResponse<VoteResult>>(`/reviews/${reviewId}/vote`, { vote });
+    return data.data;
+  },
+
+  // UPDATE — Review Helpful: hapus vote milik user yang sedang login pada review ini.
+  async removeVote(reviewId: string) {
+    const { data } = await apiClient.delete<ApiResponse<VoteResult>>(`/reviews/${reviewId}/vote`);
+    return data.data;
+  },
+
+  // UPDATE — Balasan Review oleh Admin: kirim balasan baru ATAU edit balasan
+  // yang sudah ada (endpoint yang sama).
+  async reply(reviewId: string, message: string) {
+    const { data } = await apiClient.post<ApiResponse<ReviewApiItem>>(`/reviews/${reviewId}/reply`, { message });
+    return data.data;
+  },
+
+  // UPDATE — Balasan Review oleh Admin: Hapus Balasan.
+  async deleteReply(reviewId: string) {
+    const { data } = await apiClient.delete<ApiResponse<ReviewApiItem>>(`/reviews/${reviewId}/reply`);
     return data.data;
   },
 };
