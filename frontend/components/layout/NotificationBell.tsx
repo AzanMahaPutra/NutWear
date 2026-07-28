@@ -123,7 +123,7 @@ export function NotificationBell() {
               <p className="p-6 text-center text-sm text-neutral-400">Belum ada notifikasi</p>
             ) : (
               items.map((notification) => {
-                const Icon = TYPE_ICON[notification.type];
+                const Icon = TYPE_ICON[notification.type] || Bell;
                 const isImportant = IMPORTANT_TYPES.includes(notification.type);
                 return (
                   <button
@@ -139,7 +139,7 @@ export function NotificationBell() {
                     <span
                       className={cn(
                         "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                        TYPE_ICON_STYLE[notification.type]
+                        TYPE_ICON_STYLE[notification.type] || "bg-neutral-100 text-neutral-600"
                       )}
                     >
                       <Icon className="h-4 w-4" />
