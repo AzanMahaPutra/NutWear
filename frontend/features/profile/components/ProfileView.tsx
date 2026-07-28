@@ -9,6 +9,7 @@ import { useToastStore } from "@/stores/toastStore";
 import { Modal } from "@/components/ui/Modal";
 import { AddressForm } from "@/features/profile/components/AddressForm";
 import { authService } from "@/services/authService";
+import { userService } from "@/services/userService";
 import { unbanRequestService, UnbanRequest } from "@/services/unbanRequestService";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { ROUTES } from "@/constants/routes";
@@ -26,6 +27,11 @@ export function ProfileView() {
   const { addresses, isLoading, fetchAddresses, removeAddress } = useAddressStore();
   const showToast = useToastStore((s) => s.showToast);
   const [addAddressOpen, setAddAddressOpen] = useState(false);
+
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [editNama, setEditNama] = useState("");
+  const [editNoHp, setEditNoHp] = useState("");
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
   // UPDATE — Pengajuan Unban: state untuk modal "Ajukan Pembukaan Blokir Akun",
   // hanya relevan/ditampilkan kalau akun sedang berstatus "banned".
@@ -82,6 +88,31 @@ export function ProfileView() {
     }
   }
 
+  function handleOpenEditProfile() {
+    if (!user) return;
+    setEditNama(user.namaLengkap);
+    setEditNoHp(user.noHp);
+    setEditProfileOpen(true);
+  }
+
+  async function handleSubmitEditProfile() {
+    if (!editNama.trim() || !editNoHp.trim()) {
+      showToast("Nama dan Nomor Telepon wajib diisi", "error");
+      return;
+    }
+    setIsSubmittingEdit(true);
+    try {
+      const updatedUser = await userService.updateProfile({ namaLengkap: editNama.trim(), noHp: editNoHp.trim() });
+      setUser(updatedUser);
+      showToast("Profil berhasil diperbarui");
+      setEditProfileOpen(false);
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Gagal memperbarui profil"), "error");
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  }
+
   async function handleLogout() {
     try {
       await authService.logout();
@@ -123,7 +154,11 @@ export function ProfileView() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">{user.namaLengkap}</h1>
-        <button type="button" className="rounded-full border border-neutral-300 px-4 py-1.5 text-sm font-medium">
+        <button 
+          type="button" 
+          onClick={handleOpenEditProfile}
+          className="rounded-full border border-neutral-300 px-4 py-1.5 text-sm font-medium hover:bg-neutral-50"
+        >
           Edit
         </button>
       </div>
@@ -281,6 +316,47 @@ export function ProfileView() {
           >
             {isSubmittingUnban ? "Mengirim..." : "Kirim Permohonan"}
           </button>
+        </div>
+      </Modal>
+
+      <Modal open={editProfileOpen} onClose={() => !isSubmittingEdit && setEditProfileOpen(false)} title="Edit Profil">
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-neutral-600">Nama Lengkap</label>
+            <input
+              type="text"
+              value={editNama}
+              onChange={(e) => setEditNama(e.target.value)}
+              className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-900"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-neutral-600">Nomor Telepon</label>
+            <input
+              type="text"
+              value={editNoHp}
+              onChange={(e) => setEditNoHp(e.target.value)}
+              className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-900"
+            />
+          </div>
+          <div className="mt-4 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setEditProfileOpen(false)}
+              disabled={isSubmittingEdit}
+              className="rounded-full border border-neutral-200 px-5 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmitEditProfile}
+              disabled={isSubmittingEdit}
+              className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {isSubmittingEdit ? "Menyimpan..." : "Simpan"}
+            </button>
+          </div>
         </div>
       </Modal>
     </div>
