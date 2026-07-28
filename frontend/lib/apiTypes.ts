@@ -19,7 +19,11 @@ export interface ApiResponse<T> {
  */
 export function getApiErrorMessage(error: unknown, fallback = "Terjadi kesalahan, silakan coba lagi"): string {
   if (error instanceof AxiosError) {
-    return (error.response?.data as { message?: string })?.message ?? fallback;
+    const data = error.response?.data as { message?: string; errors?: Array<{ field: string; message: string }> };
+    if (data?.errors && data.errors.length > 0) {
+      return data.errors[0].message;
+    }
+    return data?.message ?? fallback;
   }
   // Error dari supabase-js (mis. AuthError) berbentuk Error biasa dengan `.message`.
   if (error instanceof Error && error.message) {
