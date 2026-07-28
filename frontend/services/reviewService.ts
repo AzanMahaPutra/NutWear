@@ -83,7 +83,12 @@ export const reviewService = {
   // diteruskan sebagai query string dan difilter di backend/database, bukan di frontend,
   // supaya tetap ringan walau jumlah review sudah banyak. Bisa dipakai bersamaan
   // dengan filter `rating` yang sudah ada.
-  async getAll(params: { rating?: number; productId?: string } = {}) {
+  // UPDATE — Search & Filter Kategori (Review Admin): `search` (Nama Produk/
+  // SKU/Nama User, partial) dan `categoryId` opsional, diteruskan sebagai query
+  // string dan difilter di backend/database (bukan di frontend), supaya tetap
+  // ringan walau jumlah review sudah banyak. Bisa dipakai bersamaan dengan
+  // filter `rating` & `productId` yang sudah ada.
+  async getAll(params: { rating?: number; productId?: string; categoryId?: string; search?: string } = {}) {
     const { data } = await apiClient.get<ApiResponse<ReviewApiItem[]>>("/reviews", { params });
     return data.data;
   },

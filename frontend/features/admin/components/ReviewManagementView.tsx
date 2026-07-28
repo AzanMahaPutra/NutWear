@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Star, Eye, EyeOff, MessageSquare, MessageSquareText } from "lucide-react";
+import { Star, Eye, EyeOff, MessageSquare, MessageSquareText, Search, X } from "lucide-react";
 import { DataTable } from "@/components/shared/DataTable";
 import { RowActions } from "@/components/shared/RowActions";
 import { RatingStars } from "@/components/ui/RatingStars";
 import { reviewService, ReviewStatus, ReviewAdminReply } from "@/services/reviewService";
-import { productService } from "@/services/productService";
+import { useAdminCategoryStore } from "@/stores/adminCategoryStore";
 import { useToastStore } from "@/stores/toastStore";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { formatDate } from "@/utils/formatDate";
 import { cn } from "@/utils/cn";
@@ -50,42 +51,49 @@ const FILTERS: { value: RatingFilter; label: string }[] = [
   { value: 1, label: "Bintang 1" },
 ];
 
-// UPDATE — Filter Review berdasarkan Produk. "all" berarti tidak difilter
-// berdasarkan produk (menampilkan review dari seluruh produk seperti semula).
-const ALL_PRODUCTS = "all";
-
-interface ProductOption {
-  id: string;
-  namaProduk: string;
-}
+// UPDATE — Search & Filter Kategori: "all" berarti tidak difilter berdasarkan
+// kategori (menampilkan review dari seluruh kategori produk seperti semula).
+const ALL_CATEGORIES = "all";
 
 /**
  * View Manajemen Review Admin — fetch dari Review API sungguhan (GET /reviews, admin only),
- * menampilkan produk yang direview (thumbnail, nama, SKU) + filter berdasarkan rating,
- * moderasi (hapus) lewat DELETE /reviews/:id.
+ * menampilkan produk yang direview (thumbnail, nama, SKU) + filter rating + moderasi
+ * (sembunyikan/tampilkan, hapus) + balas review, lewat endpoint yang sudah ada.
  *
- * UPDATE — Filter berdasarkan Produk: dropdown "Produk" diisi dari seluruh produk
- * di database (Product API, GET /products). Filter Produk & filter Rating dikirim
- * bersamaan sebagai query string ke GET /reviews dan difilter di backend/database
- * (bukan di frontend) supaya performa tetap baik walau jumlah review sudah banyak.
+ * UPDATE — Peningkatan Search & Filter: Search Bar tunggal (tampilan sama dengan
+ * `ProductManagementView`) mencari berdasarkan Nama Produk (sebagian kata), SKU
+ * Produk, ATAU Nama User yang memberi review — plus dropdown Filter Kategori di
+ * sebelahnya (diisi dari Category API, sama seperti di halaman Produk Admin).
+ * Menggantikan dropdown "Produk" lama (daftar seluruh produk satu per satu jadi
+ * tidak praktis begitu jumlah produk sangat banyak — sesuai keluhan yang diminta
+ * untuk diperbaiki). Sama seperti sebelumnya, Search & Filter Kategori dikirim
+ * sebagai query string ke GET /reviews dan diproses di backend/database (bukan
+ * di frontend) — lihat reviewRepository.findAll — supaya tetap ringan walau
+ * jumlah review sudah sangat banyak, dan tetap bisa dipakai bersamaan dengan
+ * filter Rating & moderasi Status yang sudah ada (semuanya AND, tidak saling
+ * merusak).
  */
 export function ReviewManagementView() {
   const [reviews, setReviews] = useState<AdminReviewItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>("all");
-  const [productFilter, setProductFilter] = useState<string>(ALL_PRODUCTS);
-  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+
+  // UPDATE — Search Bar (Nama Produk/SKU/Nama User) + Filter Kategori.
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
+  const [categoryFilter, setCategoryFilter] = useState<string>(ALL_CATEGORIES);
+
   const [replyingReview, setReplyingReview] = useState<AdminReviewItem | null>(null);
   const showToast = useToastStore((s) => s.showToast);
 
-  // UPDATE — Ambil seluruh produk (pageSize besar) sekali di awal untuk mengisi
-  // dropdown "Produk". Ini hanya untuk isi dropdown, tidak dipakai memfilter review
-  // di frontend — filter review tetap dilakukan lewat query ke backend di bawah.
+  // UPDATE — Filter Kategori: dropdown diisi dari Category API sungguhan (bukan
+  // ditulis manual), pakai store yang sama persis dengan halaman Produk Admin
+  // supaya konsisten & tidak ada request tambahan kalau store ini sudah pernah dimuat.
+  const categories = useAdminCategoryStore((s) => s.categories);
+  const fetchCategories = useAdminCategoryStore((s) => s.fetchCategories);
+
   useEffect(() => {
-    productService
-      .getAll({ pageSize: 1000 })
-      .then(({ items }) => setProductOptions(items.map((p) => ({ id: p.id, namaProduk: p.namaProduk }))))
-      .catch((err) => showToast(getApiErrorMessage(err, "Gagal memuat daftar produk"), "error"));
+    fetchCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -94,13 +102,14 @@ export function ReviewManagementView() {
     reviewService
       .getAll({
         rating: ratingFilter === "all" ? undefined : ratingFilter,
-        productId: productFilter === ALL_PRODUCTS ? undefined : productFilter,
+        categoryId: categoryFilter === ALL_CATEGORIES ? undefined : categoryFilter,
+        search: debouncedSearch.trim() || undefined,
       })
       .then(setReviews)
       .catch((err) => showToast(getApiErrorMessage(err, "Gagal memuat ulasan"), "error"))
       .finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ratingFilter, productFilter]);
+  }, [ratingFilter, categoryFilter, debouncedSearch]);
 
   async function handleDelete(id: string) {
     try {
@@ -134,22 +143,60 @@ export function ReviewManagementView() {
     setReplyingReview(null);
   }
 
+  function handleResetFilter() {
+    setSearchInput("");
+    setCategoryFilter(ALL_CATEGORIES);
+    setRatingFilter("all");
+  }
+
+  const isFilterActive = debouncedSearch.trim().length > 0 || categoryFilter !== ALL_CATEGORIES || ratingFilter !== "all";
+
+  const emptyTitle = isLoading
+    ? "Memuat..."
+    : isFilterActive
+    ? "Tidak ada ulasan yang sesuai dengan pencarian."
+    : "Belum ada ulasan";
+
   return (
     <div className="p-6">
-      <div className="mb-4">
-        <label className="mb-1.5 block text-xs font-semibold text-neutral-600">Produk</label>
+      {/* UPDATE — Search Bar (Nama Produk/SKU/Nama User) + Filter Kategori:
+          Desktop → Search Bar di kiri, dropdown Kategori di kanan (flex-row).
+          Mobile → ditumpuk vertikal (flex-col) kalau ruang tidak cukup, sama
+          persis dengan pola layout di ProductManagementView. */}
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Cari nama produk, SKU, atau nama pengguna..."
+            className="w-full rounded-lg border border-neutral-200 bg-white py-2.5 pl-9 pr-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
+          />
+        </div>
+
         <select
-          value={productFilter}
-          onChange={(e) => setProductFilter(e.target.value)}
-          className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-neutral-900 sm:w-80"
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-neutral-900 sm:w-56"
         >
-          <option value={ALL_PRODUCTS}>Semua Produk</option>
-          {productOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.namaProduk}
+          <option value={ALL_CATEGORIES}>Semua Kategori</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.namaKategori}
             </option>
           ))}
         </select>
+
+        {isFilterActive && (
+          <button
+            type="button"
+            onClick={handleResetFilter}
+            className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-200 px-3 py-2.5 text-sm font-medium text-neutral-600 transition hover:bg-neutral-50 sm:w-auto"
+          >
+            <X className="h-3.5 w-3.5" /> Reset Filter
+          </button>
+        )}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -174,7 +221,7 @@ export function ReviewManagementView() {
       <DataTable
         rowKey={(r) => r.id}
         data={reviews}
-        emptyTitle={isLoading ? "Memuat..." : "Belum ada ulasan"}
+        emptyTitle={emptyTitle}
         columns={[
           {
             key: "produk",
