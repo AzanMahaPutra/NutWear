@@ -1,5 +1,6 @@
 import { apiClient } from "@/lib/apiClient";
 import { ApiResponse } from "@/lib/apiTypes";
+import type { BannerImageAdjustment } from "@/utils/bannerImage";
 
 export type HeadingLevel = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 export type FontWeight = "normal" | "medium" | "semibold" | "bold";
@@ -10,6 +11,8 @@ export interface Banner {
   isActive: boolean;
   sortOrder: number;
   backgroundImageUrl: string;
+  /** Pengaturan tampilan gambar latar (posisi X/Y, zoom). Opsional demi kompatibilitas API/banner lama — dinormalisasi lewat utils/bannerImage. */
+  imageAdjustment?: BannerImageAdjustment;
   brand: {
     name: string | null;
     logoUrl: string | null;
@@ -109,6 +112,11 @@ export interface BannerFormPayload {
   isActive?: boolean;
   sortOrder?: number;
   backgroundImage?: File | null;
+
+  /** Pengaturan tampilan gambar latar: 0–100 (%), 0–100 (%), 1–3. */
+  imagePositionX?: number;
+  imagePositionY?: number;
+  imageScale?: number;
 
   /** Id produk tujuan saat banner diklik (opsional). Kirim "" / null untuk mengosongkan. */
   productId?: string | null;

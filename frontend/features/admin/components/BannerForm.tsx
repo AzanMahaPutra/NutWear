@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, UseFormRegisterReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Trash2 } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { FormInput } from "@/components/ui/FormInput";
 import { Banner, BannerFormPayload } from "@/services/bannerService";
 import { useAdminBannerStore } from "@/stores/adminBannerStore";
@@ -12,6 +12,9 @@ import { useAdminProductStore } from "@/stores/adminProductStore";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 import { cn } from "@/utils/cn";
+import { BannerPreview } from "@/features/admin/components/BannerPreview";
+import type { PromoBannerData } from "@/features/home/components/PromoBanner";
+import { DEFAULT_IMAGE_ADJUSTMENT, IMAGE_ADJUSTMENT_LIMITS, normalizeImageAdjustment } from "@/utils/bannerImage";
 
 const HEADINGS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
 const WEIGHTS = ["normal", "medium", "semibold", "bold"] as const;
@@ -83,6 +86,11 @@ const bannerSchema = z.object({
 
   isActive: z.boolean().optional(),
 
+  /** Pengaturan tampilan gambar latar (posisi % & zoom) — file gambar asli tidak diubah. */
+  imagePositionX: z.coerce.number().min(0).max(100).optional(),
+  imagePositionY: z.coerce.number().min(0).max(100).optional(),
+  imageScale: z.coerce.number().min(1).max(3).optional(),
+
   /** Produk tujuan saat banner diklik user di Hero Banner Beranda. Kosong = tidak ada aksi klik. */
   productId: z.string().optional(),
 });
@@ -114,10 +122,19 @@ function defaultsFrom(initialData?: Banner): Partial<BannerFormValues> {
       ctaSize: "medium",
       isActive: true,
       productId: "",
+      imagePositionX: DEFAULT_IMAGE_ADJUSTMENT.positionX,
+      imagePositionY: DEFAULT_IMAGE_ADJUSTMENT.positionY,
+      imageScale: DEFAULT_IMAGE_ADJUSTMENT.scale,
     };
   }
 
+  // Banner lama tanpa pengaturan -> default (tampilan sama seperti sebelumnya).
+  const adjustment = normalizeImageAdjustment(initialData.imageAdjustment);
+
   return {
+    imagePositionX: adjustment.positionX,
+    imagePositionY: adjustment.positionY,
+    imageScale: adjustment.scale,
     brandName: initialData.brand.name ?? "",
     brandLogoSize: initialData.brand.logoSize,
     titleText: initialData.title.text,
@@ -154,6 +171,96 @@ function defaultsFrom(initialData?: Banner): Partial<BannerFormValues> {
     isActive: initialData.isActive,
     productId: initialData.targetProduct?.id ?? "",
   };
+}
+
+/**
+ * Susun data banner untuk preview dari nilai form saat ini. Aturan fallback
+ * disamakan dengan onSubmit + PromoBanner (promo kosong = Harga Normal, dst).
+ */
+function buildPreviewBanner(
+  v: BannerFormValues,
+  backgroundImageUrl: string,
+  logoUrl: string | null
+): PromoBannerData {
+  const num = (x: unknown) => (x === "" || x === undefined || x === null || Number.isNaN(Number(x)) ? null : Number(x));
+  const priceNormal = num(v.priceNormal) ?? 0;
+  const pricePromo = num(v.pricePromo);
+  const before = num(v.priceBeforeDiscount);
+
+  return {
+    backgroundImageUrl,
+    imageAdjustment: normalizeImageAdjustment({
+      positionX: v.imagePositionX,
+      positionY: v.imagePositionY,
+      scale: v.imageScale,
+    }),
+    brand: { name: v.brandName || null, logoUrl, logoSize: v.brandLogoSize ?? "medium" },
+    title: {
+      text: v.titleText || "Judul banner",
+      color: v.titleColor ?? "#111111",
+      heading: v.titleHeading ?? "h2",
+      weight: v.titleWeight ?? "bold",
+    },
+    subtitle: {
+      text: v.subtitleText || null,
+      color: v.subtitleColor ?? null,
+      heading: v.subtitleHeading ?? "h5",
+      weight: v.subtitleWeight ?? "normal",
+    },
+    priceNormal: { value: priceNormal, color: v.priceNormalColor ?? "#111111", heading: v.priceNormalHeading ?? "h4" },
+    priceBeforeDiscount:
+      before === null
+        ? null
+        : { value: before, color: v.priceBeforeDiscountColor ?? "#737373", heading: v.priceBeforeDiscountHeading ?? "h5" },
+    pricePromo: {
+      value: pricePromo ?? priceNormal,
+      color: v.pricePromoColor ?? "#dc2626",
+      heading: v.pricePromoHeading ?? "h3",
+    },
+    limitedOffer:
+      v.offerStartDate && v.offerEndDate
+        ? {
+            startDate: v.offerStartDate,
+            endDate: v.offerEndDate,
+            color: v.offerColor ?? "#dc2626",
+            heading: v.offerHeading ?? "h6",
+          }
+        : null,
+    cta: {
+      text: v.ctaText || "Belanja Sekarang",
+      link: "", // di preview tidak perlu bisa diklik
+      bgColor: v.ctaBgColor ?? "#111111",
+      textColor: v.ctaTextColor ?? "#ffffff",
+      radius: Number(v.ctaRadius ?? 9999),
+      size: v.ctaSize ?? "medium",
+    },
+  };
+}
+
+function SliderField({
+  label,
+  valueLabel,
+  register,
+  min,
+  max,
+  step,
+}: {
+  label: string;
+  valueLabel: string;
+  register: UseFormRegisterReturn;
+  min: number;
+  max: number;
+  step: number;
+}) {
+  return (
+    <div className="w-full">
+      <div className="mb-1 flex items-center justify-between">
+        <label className="text-xs font-semibold text-neutral-600">{label}</label>
+        <span className="text-xs tabular-nums text-neutral-500">{valueLabel}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} {...register} className="w-full cursor-pointer accent-neutral-900" />
+    </div>
+  );
 }
 
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -272,18 +379,38 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<BannerFormValues>({
     resolver: zodResolver(bannerSchema),
     defaultValues: defaultsFrom(initialData),
   });
 
-  const backgroundPreview = backgroundImage ? URL.createObjectURL(backgroundImage) : initialData?.backgroundImageUrl ?? null;
-  const logoPreview = brandLogo
-    ? URL.createObjectURL(brandLogo)
-    : removeBrandLogo
-      ? null
-      : initialData?.brand.logoUrl ?? null;
+  // Object URL dibuat sekali per file (bukan tiap render) — kalau tidak, setiap
+  // gerakan slider membuat URL baru dan gambar preview akan berkedip/reload.
+  const backgroundBlobUrl = useMemo(() => (backgroundImage ? URL.createObjectURL(backgroundImage) : null), [backgroundImage]);
+  const logoBlobUrl = useMemo(() => (brandLogo ? URL.createObjectURL(brandLogo) : null), [brandLogo]);
+  useEffect(() => () => { if (backgroundBlobUrl) URL.revokeObjectURL(backgroundBlobUrl); }, [backgroundBlobUrl]);
+  useEffect(() => () => { if (logoBlobUrl) URL.revokeObjectURL(logoBlobUrl); }, [logoBlobUrl]);
+
+  const backgroundPreview = backgroundBlobUrl ?? initialData?.backgroundImageUrl ?? null;
+  const logoPreview = logoBlobUrl ?? (removeBrandLogo ? null : initialData?.brand.logoUrl ?? null);
+
+  // watch() tanpa argumen = semua field; form re-render tiap perubahan -> preview realtime.
+  const watched = watch();
+  const adjustment = normalizeImageAdjustment({
+    positionX: watched.imagePositionX,
+    positionY: watched.imagePositionY,
+    scale: watched.imageScale,
+  });
+  const previewBanner = backgroundPreview ? buildPreviewBanner(watched, backgroundPreview, logoPreview) : null;
+
+  function resetImageAdjustment() {
+    setValue("imagePositionX", DEFAULT_IMAGE_ADJUSTMENT.positionX, { shouldDirty: true });
+    setValue("imagePositionY", DEFAULT_IMAGE_ADJUSTMENT.positionY, { shouldDirty: true });
+    setValue("imageScale", DEFAULT_IMAGE_ADJUSTMENT.scale, { shouldDirty: true });
+  }
 
   async function onSubmit(values: BannerFormValues) {
     try {
@@ -323,7 +450,19 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      {/* Preview realtime: di layar lebar menempel di kanan saat form di-scroll. */}
+      <div className="lg:sticky lg:top-0 lg:order-2 lg:self-start">
+        {previewBanner ? (
+          <BannerPreview banner={previewBanner} />
+        ) : (
+          <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-neutral-300 px-4 text-center text-sm text-neutral-500">
+            Upload Gambar Latar untuk melihat preview banner.
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-4 lg:order-1">
       <Section title="Brand">
         <FormInput label="Nama Brand" placeholder="Opsional" {...register("brandName")} />
         <ImagePicker
@@ -460,6 +599,37 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
         />
       </Section>
 
+      <Section title="Pengaturan Tampilan Gambar">
+        <p className="text-xs text-neutral-500">
+          Atur bagian gambar yang ditampilkan di banner. File gambar asli tidak diubah.
+        </p>
+        <SliderField
+          label="Posisi Horizontal (X)"
+          valueLabel={`${adjustment.positionX}%`}
+          register={register("imagePositionX")}
+          {...IMAGE_ADJUSTMENT_LIMITS.position}
+        />
+        <SliderField
+          label="Posisi Vertikal (Y)"
+          valueLabel={`${adjustment.positionY}%`}
+          register={register("imagePositionY")}
+          {...IMAGE_ADJUSTMENT_LIMITS.position}
+        />
+        <SliderField
+          label="Zoom"
+          valueLabel={`${adjustment.scale.toFixed(2)}×`}
+          register={register("imageScale")}
+          {...IMAGE_ADJUSTMENT_LIMITS.scale}
+        />
+        <button
+          type="button"
+          onClick={resetImageAdjustment}
+          className="flex w-fit items-center gap-1 text-xs font-medium text-neutral-600 hover:underline"
+        >
+          <RotateCcw className="h-3 w-3" /> Reset ke default
+        </button>
+      </Section>
+
       <label className="flex items-center gap-2 text-sm font-medium text-neutral-800">
         <input type="checkbox" {...register("isActive")} className="h-4 w-4 rounded border-neutral-300" />
         Tampilkan banner ini
@@ -474,6 +644,7 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
       >
         {isSubmitting ? "Menyimpan..." : initialData ? "Simpan Perubahan" : "Tambah Banner"}
       </button>
+      </div>
     </form>
   );
 }

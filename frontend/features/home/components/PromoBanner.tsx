@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Banner, HeadingLevel, SizeOption } from "@/services/bannerService";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
+import { getBannerImageStyle } from "@/utils/bannerImage";
 
 const HEADING_TEXT_SIZE: Record<HeadingLevel, string> = {
   h1: "text-3xl sm:text-4xl md:text-5xl lg:text-6xl",
@@ -27,16 +28,41 @@ const CTA_SIZE_CLASS: Record<SizeOption, string> = {
   large: "px-8 py-4 text-base",
 };
 
+/** Data minimum yang dibutuhkan tampilan banner (Banner dari API, atau draft form admin). */
+export type PromoBannerData = Pick<
+  Banner,
+  | "backgroundImageUrl"
+  | "imageAdjustment"
+  | "brand"
+  | "title"
+  | "subtitle"
+  | "priceNormal"
+  | "priceBeforeDiscount"
+  | "pricePromo"
+  | "limitedOffer"
+  | "cta"
+>;
+
 /**
- * Banner promo di Beranda — kontennya berasal sepenuhnya dari Banner Builder API
- * (brand, judul/sub judul, harga normal/sebelum diskon/promo, limited offer, CTA).
+ * Tampilan visual banner (tanpa link). Satu-satunya implementasi — dipakai oleh
+ * PromoBanner di Beranda dan oleh preview realtime di modal admin, sehingga
+ * struktur, posisi gambar, dan zoom selalu sama.
  */
-export function PromoBanner({ banner }: { banner: Banner }) {
+export function PromoBannerView({ banner }: { banner: PromoBannerData }) {
   const { title, subtitle, brand, priceNormal, priceBeforeDiscount, pricePromo, limitedOffer, cta } = banner;
 
-  const content = (
+  return (
     <div className="relative isolate min-h-[360px] overflow-hidden bg-neutral-800 sm:min-h-[420px] md:min-h-[480px]">
-      <Image src={banner.backgroundImageUrl} alt={title.text} fill sizes="100vw" className="object-cover" />
+      <Image
+        src={banner.backgroundImageUrl}
+        alt={title.text}
+        fill
+        sizes="100vw"
+        className="object-cover"
+        style={getBannerImageStyle(banner.imageAdjustment)}
+        // blob: = file yang baru dipilih admin di form (preview sebelum disimpan).
+        unoptimized={banner.backgroundImageUrl.startsWith("blob:")}
+      />
       <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
 
       <div className="relative flex min-h-[360px] max-w-md flex-col justify-center gap-3 px-5 py-10 text-white sm:min-h-[420px] sm:px-8 sm:py-16 md:min-h-[480px] md:px-16">
@@ -116,6 +142,13 @@ export function PromoBanner({ banner }: { banner: Banner }) {
       </div>
     </div>
   );
+}
 
-  return cta.link ? <Link href={cta.link}>{content}</Link> : content;
+/**
+ * Banner promo di Beranda — kontennya berasal sepenuhnya dari Banner Builder API
+ * (brand, judul/sub judul, harga normal/sebelum diskon/promo, limited offer, CTA).
+ */
+export function PromoBanner({ banner }: { banner: Banner }) {
+  const content = <PromoBannerView banner={banner} />;
+  return banner.cta.link ? <Link href={banner.cta.link}>{content}</Link> : content;
 }

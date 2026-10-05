@@ -134,7 +134,7 @@ export function BannerManagementView() {
         ]}
       />
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title={editing ? "Edit Banner" : "Tambah Banner"} size="xl">
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title={editing ? "Edit Banner" : "Tambah Banner"} size="2xl">
         <BannerForm initialData={editing} onSuccess={() => setFormOpen(false)} />
       </Modal>
     </div>
