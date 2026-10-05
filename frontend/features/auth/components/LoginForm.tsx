@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -14,7 +14,7 @@ import { ROUTES } from "@/constants/routes";
 import { useToastStore } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { authService } from "@/services/authService";
-import { getApiErrorMessage } from "@/lib/apiTypes";
+import { formatRetryAfter, getApiErrorMessage, getRateLimitInfo } from "@/lib/apiTypes";
 
 /**
  * Form Login. Validasi pakai React Hook Form + Zod.
@@ -25,6 +25,12 @@ export function LoginForm() {
   const showToast = useToastStore((s) => s.showToast);
   const setUser = useAuthStore((s) => s.setUser);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  // UPDATE #1 — Proteksi spam login (UX saja; penegakan limit tetap di backend).
+  // `submitLockRef` memblokir submit kedua SECARA SINKRON (double-click / Enter
+  // berulang) sebelum React sempat me-render state `isSubmitting` yang baru.
+  const submitLockRef = useRef(false);
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
 
   const {
     register,
@@ -32,14 +38,40 @@ export function LoginForm() {
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) });
 
+  // Timer ini HANYA membuka kembali tombol setelah cooldown — tidak melakukan request apa pun.
+  useEffect(
+    () => () => {
+      if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+    },
+    []
+  );
+
   async function onSubmit(values: LoginFormValues) {
+    if (submitLockRef.current || cooldownMessage) return;
+    submitLockRef.current = true;
     try {
       const user = await authService.login(values);
       setUser(user);
       showToast("Login berhasil");
       router.push(ROUTES.home);
     } catch (err) {
-      showToast(getApiErrorMessage(err, "Email atau password salah"), "error");
+      const rateLimit = getRateLimitInfo(err);
+      if (rateLimit) {
+        // HTTP 429 — tampilkan waktu tunggu, kunci tombol sampai cooldown selesai, TANPA auto-retry.
+        const seconds = rateLimit.retryAfterSeconds;
+        const message = seconds
+          ? `Terlalu banyak percobaan login. Silakan coba lagi dalam ${formatRetryAfter(seconds)}.`
+          : getApiErrorMessage(err, "Terlalu banyak percobaan login. Silakan coba lagi beberapa saat lagi.");
+        setCooldownMessage(message);
+        showToast(message, "error");
+        if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+        cooldownTimerRef.current = setTimeout(() => setCooldownMessage(null), (seconds ?? 60) * 1000);
+      } else {
+        showToast(getApiErrorMessage(err, "Email atau password salah"), "error");
+      }
+      // Lock dilepas HANYA saat gagal. Setelah login sukses lock sengaja dibiarkan
+      // aktif sampai halaman berpindah, supaya klik ganda saat redirect tidak mengirim request kedua.
+      submitLockRef.current = false;
     }
   }
 
@@ -92,12 +124,18 @@ export function LoginForm() {
           </Link>
         </div>
 
+        {cooldownMessage && (
+          <p role="alert" className="text-sm text-red-600">
+            {cooldownMessage}
+          </p>
+        )}
+
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || Boolean(cooldownMessage)}
           className="w-full rounded-full bg-neutral-900 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 disabled:opacity-60"
         >
-          {isSubmitting ? "Memproses..." : "MASUK"}
+          {isSubmitting ? "Memproses..." : cooldownMessage ? "COBA LAGI NANTI" : "MASUK"}
         </button>
       </form>
 

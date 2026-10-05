@@ -31,3 +31,31 @@ export function getApiErrorMessage(error: unknown, fallback = "Terjadi kesalahan
   }
   return fallback;
 }
+
+/**
+ * UPDATE #1 — Rate limit login. Mengenali HTTP 429 dari backend dan mengambil
+ * waktu tunggu (detik) dari header `Retry-After` (fallback: `retryAfterSeconds`
+ * di body JSON). Mengembalikan null kalau error BUKAN 429. `retryAfterSeconds`
+ * bernilai null kalau backend tidak memberi informasi waktu tunggu.
+ */
+export function getRateLimitInfo(error: unknown): { retryAfterSeconds: number | null } | null {
+  if (!(error instanceof AxiosError) || error.response?.status !== 429) return null;
+
+  const headerValue = error.response.headers?.["retry-after"];
+  let seconds = Number(headerValue);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    // Retry-After boleh berupa HTTP-date, bukan hanya detik.
+    const asDate = typeof headerValue === "string" ? Date.parse(headerValue) : NaN;
+    seconds = Number.isFinite(asDate) ? (asDate - Date.now()) / 1000 : NaN;
+  }
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    seconds = Number((error.response.data as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds);
+  }
+
+  return { retryAfterSeconds: Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null };
+}
+
+/** "10 menit" / "45 detik" — untuk pesan waktu tunggu rate limit. */
+export function formatRetryAfter(seconds: number): string {
+  return seconds >= 60 ? `${Math.ceil(seconds / 60)} menit` : `${seconds} detik`;
+}
