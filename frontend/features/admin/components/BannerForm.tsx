@@ -406,20 +406,23 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
   });
   const previewBanner = backgroundPreview ? buildPreviewBanner(watched, backgroundPreview, logoPreview) : null;
 
+  function setPosition(x: number, y: number) {
+    setValue("imagePositionX", x, { shouldDirty: true, shouldTouch: true });
+    setValue("imagePositionY", y, { shouldDirty: true, shouldTouch: true });
+  }
+
+  function setScale(scale: number) {
+    setValue("imageScale", scale, { shouldDirty: true, shouldTouch: true });
+  }
+
   function resetImageAdjustment() {
-    setValue("imagePositionX", DEFAULT_IMAGE_ADJUSTMENT.positionX, { shouldDirty: true });
-    setValue("imagePositionY", DEFAULT_IMAGE_ADJUSTMENT.positionY, { shouldDirty: true });
-    setValue("imageScale", DEFAULT_IMAGE_ADJUSTMENT.scale, { shouldDirty: true });
+    setValue("imagePositionX", DEFAULT_IMAGE_ADJUSTMENT.positionX, { shouldDirty: true, shouldTouch: true });
+    setValue("imagePositionY", DEFAULT_IMAGE_ADJUSTMENT.positionY, { shouldDirty: true, shouldTouch: true });
+    setValue("imageScale", DEFAULT_IMAGE_ADJUSTMENT.scale, { shouldDirty: true, shouldTouch: true });
   }
 
   async function onSubmit(values: BannerFormValues) {
     try {
-      // Harga Promo bersifat opsional di form (hanya diisi kalau memang ada promo).
-      // Kalau dikosongkan, kita anggap "tidak ada promo" — harga jual = Harga Normal.
-      // Ini WAJIB dilakukan di sini (bukan dibiarkan jadi 0) karena:
-      // 1) Backend masih mewajibkan pricePromo terisi (angka > 0) saat create.
-      // 2) PromoBanner di Beranda menampilkan pricePromo sebagai harga utama —
-      //    kalau nilainya 0, banner akan menampilkan "Rp 0" ke pembeli.
       const pricePromoValue =
         values.pricePromo === "" || values.pricePromo === undefined ? values.priceNormal : Number(values.pricePromo);
 
@@ -451,8 +454,8 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      {/* Preview realtime: di layar lebar menempel di kanan saat form di-scroll. */}
-      <div className="lg:sticky lg:top-0 lg:order-2 lg:self-start">
+      {/* Preview realtime: di layar lebar menempel di kanan saat form di-scroll, di mobile tampil di atas. */}
+      <div className="order-1 lg:order-2 lg:sticky lg:top-0 lg:self-start">
         {previewBanner ? (
           <BannerPreview banner={previewBanner} />
         ) : (
@@ -462,7 +465,7 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
         )}
       </div>
 
-      <div className="space-y-4 lg:order-1">
+      <div className="order-2 lg:order-1 space-y-4">
       <Section title="Brand">
         <FormInput label="Nama Brand" placeholder="Opsional" {...register("brandName")} />
         <ImagePicker
@@ -601,8 +604,124 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
 
       <Section title="Pengaturan Tampilan Gambar">
         <p className="text-xs text-neutral-500">
-          Atur bagian gambar yang ditampilkan di banner. File gambar asli tidak diubah.
+          Atur bagian gambar yang ditampilkan di banner. Preview di samping/atas akan berubah langsung secara realtime.
         </p>
+
+        {/* Tombol Cepat Posisi */}
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-neutral-600">Preset Posisi Cepat</label>
+          <div className="grid grid-cols-3 gap-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setPosition(0, 0)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 0 && adjustment.positionY === 0
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Kiri Atas
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(50, 0)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 50 && adjustment.positionY === 0
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Tengah Atas
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(100, 0)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 100 && adjustment.positionY === 0
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Kanan Atas
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(0, 50)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 0 && adjustment.positionY === 50
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Kiri Tengah
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(50, 50)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 50 && adjustment.positionY === 50
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Tengah
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(100, 50)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 100 && adjustment.positionY === 50
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Kanan Tengah
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(0, 100)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 0 && adjustment.positionY === 100
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Kiri Bawah
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(50, 100)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 50 && adjustment.positionY === 100
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Tengah Bawah
+            </button>
+            <button
+              type="button"
+              onClick={() => setPosition(100, 100)}
+              className={cn(
+                "rounded border px-2 py-1 text-center font-medium transition-colors",
+                adjustment.positionX === 100 && adjustment.positionY === 100
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+              )}
+            >
+              Kanan Bawah
+            </button>
+          </div>
+        </div>
+
         <SliderField
           label="Posisi Horizontal (X)"
           valueLabel={`${adjustment.positionX}%`}
@@ -615,12 +734,36 @@ export function BannerForm({ initialData, onSuccess }: { initialData?: Banner; o
           register={register("imagePositionY")}
           {...IMAGE_ADJUSTMENT_LIMITS.position}
         />
-        <SliderField
-          label="Zoom"
-          valueLabel={`${adjustment.scale.toFixed(2)}×`}
-          register={register("imageScale")}
-          {...IMAGE_ADJUSTMENT_LIMITS.scale}
-        />
+        
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="text-xs font-semibold text-neutral-600">Preset Zoom</label>
+            <div className="flex gap-1">
+              {[1, 1.25, 1.5, 2].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setScale(s)}
+                  className={cn(
+                    "rounded border px-2 py-0.5 text-xs font-medium transition-colors",
+                    Math.abs(adjustment.scale - s) < 0.01
+                      ? "border-neutral-900 bg-neutral-900 text-white"
+                      : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+                  )}
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
+          </div>
+          <SliderField
+            label="Zoom Halus"
+            valueLabel={`${adjustment.scale.toFixed(2)}×`}
+            register={register("imageScale")}
+            {...IMAGE_ADJUSTMENT_LIMITS.scale}
+          />
+        </div>
+
         <button
           type="button"
           onClick={resetImageAdjustment}
