@@ -53,6 +53,46 @@ export interface InventoryFilterParams {
   pageSize?: number;
 }
 
+// --- UPDATE #2 — Inventory dikelompokkan per Produk ---
+
+export interface StockStatusCounts {
+  aman: number;
+  menipis: number;
+  habis: number;
+}
+
+/** Satu baris produk pada daftar Inventory Stock (lihat stockService.js:getInventoryProducts backend). */
+export interface InventoryProduct {
+  productId: string;
+  namaProduk: string;
+  slug: string | null;
+  imageUrl: string | null;
+  totalVariants: number;
+  totalStok: number;
+  counts: StockStatusCounts;
+  /** Status terburuk di antara varian (habis > menipis > aman). */
+  status: StockStatus;
+}
+
+export interface InventoryVariant {
+  variantId: string;
+  warna: string;
+  ukuran: string;
+  sku: string;
+  stok: number;
+  status: StockStatus;
+}
+
+/** Detail produk untuk modal: seluruh varian, dimuat saat modal dibuka. */
+export interface InventoryProductDetail {
+  productId: string;
+  namaProduk: string;
+  slug: string | null;
+  imageUrl: string | null;
+  minimumStock: number;
+  variants: InventoryVariant[];
+}
+
 /** Satu baris Riwayat Perubahan Stok (lihat stockService.js:getStockLogs backend). */
 export interface StockLogEntry {
   id: string;
@@ -103,6 +143,20 @@ export const stockService = {
       ApiResponse<{ items: InventoryItem[]; minimumStock: number }> & { meta: InventoryListMeta }
     >("/stock/inventory", { params });
     return { items: data.data.items, minimumStock: data.data.minimumStock, meta: data.meta };
+  },
+
+  /** Daftar produk (satu item per produk) — grouping/filter/pagination di database. */
+  async getInventoryProducts(params: InventoryFilterParams = {}) {
+    const { data } = await apiClient.get<
+      ApiResponse<{ items: InventoryProduct[]; minimumStock: number }> & { meta: InventoryListMeta }
+    >("/stock/inventory/products", { params });
+    return { items: data.data.items, minimumStock: data.data.minimumStock, meta: data.meta };
+  },
+
+  /** Seluruh varian satu produk untuk modal detail Inventory. */
+  async getInventoryProductDetail(productId: string) {
+    const { data } = await apiClient.get<ApiResponse<InventoryProductDetail>>(`/stock/inventory/products/${productId}`);
+    return data.data;
   },
 
   /** Modal Edit Stok (input manual) & tombol Quick Adjustment (+5/+10/-5/-10, dihitung di komponen pemanggil). */

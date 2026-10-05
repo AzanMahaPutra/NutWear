@@ -1,46 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { ImageOff, Pencil, Search, X } from "lucide-react";
+import { Eye, ImageOff, Search, X } from "lucide-react";
 import { DataTable } from "@/components/shared/DataTable";
 import { Pagination } from "@/components/ui/Pagination";
-import { StockStatusBadge, getStockStatus } from "@/components/shared/StockStatusBadge";
-import { InventoryEditStockModal } from "@/features/admin/components/InventoryEditStockModal";
-import { InventoryStockHistoryModal } from "@/features/admin/components/InventoryStockHistoryModal";
-import { InventoryItem, InventoryListMeta, StockStatus, stockService } from "@/services/stockService";
+import { ProductStockBadge, getProductStockStatus } from "@/components/shared/StockStatusBadge";
+import { InventoryProductDetailModal } from "@/features/admin/components/InventoryProductDetailModal";
+import {
+  InventoryListMeta,
+  InventoryProduct,
+  StockStatus,
+  StockStatusCounts,
+  stockService,
+} from "@/services/stockService";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/stores/toastStore";
 import { getApiErrorMessage } from "@/lib/apiTypes";
 
 const PAGE_SIZE = 20;
 
+// Filter bekerja di level PRODUK (lihat inventory_products di database):
+// "menipis"/"habis" = produk dengan minimal satu varian berstatus itu,
+// "aman" = produk yang seluruh variannya aman.
 const STATUS_FILTERS: { value: StockStatus | ""; label: string }[] = [
-  { value: "", label: "Semua Stok" },
-  { value: "aman", label: "Stok Aman" },
-  { value: "menipis", label: "Stok Menipis" },
-  { value: "habis", label: "Stok Habis" },
+  { value: "", label: "Semua Produk" },
+  { value: "aman", label: "Semua Aman" },
+  { value: "menipis", label: "Ada Variant Menipis" },
+  { value: "habis", label: "Ada Variant Habis" },
 ];
 
 /**
- * View utama Halaman Inventory Stock Admin.
+ * View utama Halaman Inventory Stock Admin — satu baris per PRODUK.
  *
- * Menampilkan seluruh varian produk (foto, nama produk, warna, ukuran, SKU,
- * stok, status stok) dalam satu tabel — bukan halaman Produk/Edit Produk,
- * khusus untuk memantau & mengedit stok tanpa harus membuka produk satu per
- * satu. Search (nama produk/SKU, real-time dengan debounce), filter Status
- * Stok, dan pagination seluruhnya diproses backend/database lewat
- * GET /stock/inventory (lihat stockService.ts / stockRepository.js) supaya
- * tetap cepat walau produk sudah ribuan dan varian puluhan ribu — halaman
- * ini TIDAK PERNAH memuat seluruh data ke frontend sekaligus.
+ * Varian tidak lagi ditampilkan sebagai baris utama: tombol "Lihat Detail"
+ * membuka InventoryProductDetailModal yang menjadi pusat pengelolaan stok
+ * varian produk tersebut (statistik, pilih variant, Edit Stok, Riwayat).
+ * Search (nama produk/SKU, debounce), filter status, dan pagination tetap
+ * diproses backend/database lewat GET /stock/inventory/products sehingga
+ * halaman ini tidak pernah memuat seluruh varian ke browser.
  *
- * Edit stok (manual maupun Quick Adjustment) langsung memperbarui baris yang
- * bersangkutan di state lokal setelah tersimpan (lihat handleStockSaved),
- * jadi status stok & angka di tabel berubah tanpa perlu refresh halaman.
+ * Setelah stok varian diubah di modal, baris produk di tabel diperbarui lewat
+ * handleProductChanged (ringkasan & status produk) tanpa refresh halaman.
  */
 export function InventoryStockView() {
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [minimumStock, setMinimumStock] = useState(15);
+  const [items, setItems] = useState<InventoryProduct[]>([]);
   const [meta, setMeta] = useState<InventoryListMeta>({ page: 1, pageSize: PAGE_SIZE, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const showToast = useToastStore((s) => s.showToast);
@@ -50,25 +54,27 @@ export function InventoryStockView() {
   const [statusFilter, setStatusFilter] = useState<StockStatus | "">("");
   const [page, setPage] = useState(1);
 
-  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [historyItem, setHistoryItem] = useState<InventoryItem | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<InventoryProduct | null>(null);
+  const requestId = useRef(0);
 
   async function fetchInventory() {
+    const currentRequest = ++requestId.current;
     setIsLoading(true);
     try {
-      const result = await stockService.getInventory({
+      const result = await stockService.getInventoryProducts({
         search: debouncedSearch || undefined,
         status: statusFilter || undefined,
         page,
         pageSize: PAGE_SIZE,
       });
+      if (currentRequest !== requestId.current) return; // respons usang (filter sudah berubah lagi)
       setItems(result.items);
-      setMinimumStock(result.minimumStock);
       setMeta(result.meta);
     } catch (err) {
+      if (currentRequest !== requestId.current) return;
       showToast(getApiErrorMessage(err, "Gagal memuat data Inventory Stock"), "error");
     } finally {
-      setIsLoading(false);
+      if (currentRequest === requestId.current) setIsLoading(false);
     }
   }
 
@@ -83,15 +89,16 @@ export function InventoryStockView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, statusFilter]);
 
-  // UPDATE STOK — memperbarui baris terkait secara langsung di state (tanpa
-  // refresh halaman); status stok ikut dihitung ulang dari stok baru.
-  function handleStockSaved(variantId: string, stokBaru: number) {
+  // Stok varian diubah dari modal -> perbarui ringkasan & status baris produk
+  // (baris tidak dihapus walau tak lagi cocok filter; akan hilang di refetch berikutnya).
+  function handleProductChanged(productId: string, counts: StockStatusCounts, totalStok: number) {
     setItems((prev) =>
       prev.map((item) =>
-        item.variantId === variantId ? { ...item, stok: stokBaru, status: getStockStatus(stokBaru, minimumStock) } : item
+        item.productId === productId
+          ? { ...item, counts, totalStok, status: getProductStockStatus(counts) }
+          : item
       )
     );
-    setEditingItem(null);
   }
 
   const totalPages = Math.max(Math.ceil(meta.total / meta.pageSize), 1);
@@ -140,10 +147,10 @@ export function InventoryStockView() {
       </div>
 
       <DataTable
-        rowKey={(row) => row.variantId}
+        rowKey={(row) => row.productId}
         data={items}
         emptyTitle={
-          isLoading ? "Memuat..." : debouncedSearch || statusFilter ? "Tidak ada varian yang sesuai" : "Belum ada produk"
+          isLoading ? "Memuat..." : debouncedSearch || statusFilter ? "Tidak ada produk yang sesuai" : "Belum ada produk"
         }
         columns={[
           {
@@ -160,21 +167,37 @@ export function InventoryStockView() {
             ),
           },
           { key: "namaProduk", header: "Nama Produk", render: (row) => <span className="font-medium text-neutral-900">{row.namaProduk}</span> },
-          { key: "warna", header: "Warna", render: (row) => row.warna },
-          { key: "ukuran", header: "Ukuran", render: (row) => row.ukuran },
-          { key: "sku", header: "SKU", render: (row) => row.sku || "-" },
-          { key: "stok", header: "Stok", render: (row) => <span className="font-semibold">{row.stok}</span> },
-          { key: "status", header: "Status", render: (row) => <StockStatusBadge status={row.status} /> },
+          { key: "variant", header: "Variant", render: (row) => `${row.totalVariants} variant` },
+          { key: "stok", header: "Total Stok", render: (row) => <span className="font-semibold">{row.totalStok}</span> },
+          {
+            key: "status",
+            header: "Status Stok",
+            render: (row) => (
+              <div className="flex flex-col items-start gap-1">
+                <ProductStockBadge counts={row.counts} />
+                {(row.counts.menipis > 0 || row.counts.habis > 0) && (
+                  <span className="text-xs text-neutral-500">
+                    {[
+                      row.counts.menipis > 0 && `${row.counts.menipis} menipis`,
+                      row.counts.habis > 0 && `${row.counts.habis} habis`,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </span>
+                )}
+              </div>
+            ),
+          },
           {
             key: "aksi",
             header: "Aksi",
             render: (row) => (
               <button
                 type="button"
-                onClick={() => setEditingItem(row)}
+                onClick={() => setSelectedProduct(row)}
                 className="flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
               >
-                <Pencil className="h-3.5 w-3.5" /> Edit
+                <Eye className="h-3.5 w-3.5" /> Lihat Detail
               </button>
             ),
           },
@@ -183,17 +206,11 @@ export function InventoryStockView() {
 
       <Pagination currentPage={meta.page} totalPages={totalPages} onPageChange={setPage} />
 
-      <InventoryEditStockModal
-        item={editingItem}
-        onClose={() => setEditingItem(null)}
-        onSaved={handleStockSaved}
-        onViewHistory={(item) => {
-          setEditingItem(null);
-          setHistoryItem(item);
-        }}
+      <InventoryProductDetailModal
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+        onProductChanged={handleProductChanged}
       />
-
-      <InventoryStockHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />
     </div>
   );
 }
